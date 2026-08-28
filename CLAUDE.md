@@ -31,14 +31,21 @@ proyecto es la prueba de eso.
 
 ## Estado actual
 
-- El proyecto está construido y sincronizado en `~/Desktop/GIS`.
-- Typecheck y build de producción pasan.
-- El smoke test pasa **15/15** en un Chromium real (verificado en esta máquina,
-  28 ago 2026, con Node 22).
-- El bloqueador de Node **está resuelto** (ver sección siguiente) y la app ya
-  se vio **corriendo contra los datos y el basemap reales**: globo con el
-  Cinturón de Fuego visible, tabla sincronizada, detalle con foco, reproducción
-  temporal con pulso, y el feed completo (~11k sismos) cargando sin problema.
+- **Repo público con deploy vivo** (desde 28 ago 2026):
+  https://github.com/angiecortez/world-quake-globe →
+  https://angiecortez.github.io/world-quake-globe/ (GitHub Actions corre el
+  smoke test y despliega a Pages en cada push a main).
+- Typecheck y build pasan; el smoke test pasa **28/28** en Chromium real
+  (incluye axe-core con cero violaciones WCAG 2.1 A/AA).
+- Verificado contra datos y basemap reales: sismos del USGS, coropleta con el
+  Banco Mundial en vivo, clustering con el feed de ~10k, alto contraste.
+- **OJO entorno local:** el `node` por defecto de nvm sigue siendo 21; todo
+  corre con `export PATH=$HOME/.nvm/versions/node/v22.22.2/bin:$PATH` (o
+  `nvm use 22`). Fijarlo con `nvm alias default 22` sigue pendiente de Angie.
+- Lo único que queda del backlog original: la prueba manual con
+  VoiceOver/NVDA (requiere a Angie) y la capa de aire OpenAQ (requiere key y
+  una cuenta de edge functions; la variante keyless con Open-Meteo se descartó
+  a propósito: muestrear PM2.5 en centroides de país es un dato engañoso).
 
 ---
 

@@ -18,7 +18,7 @@ try {
   await page.goto(BASE, { waitUntil: 'load' })
   await page.waitForSelector('tbody tr', { timeout: 30000 })
   await page.getByRole('button', { name: /Detener rotacion/ }).click()  // captura nitida
-  await page.locator('.check-row input').check()  // coropleta encendida
+  await page.getByRole('checkbox', { name: /Densidad de poblacion/ }).check()  // coropleta encendida
   await page.waitForSelector('#country-query', { timeout: 30000 })
   // Encuadre: Sudamerica y el Cinturon de Fuego llenando el lienzo.
   await page.evaluate(() => window.__wqgMap.jumpTo({ center: [-68, -14], zoom: 1.9 }))
