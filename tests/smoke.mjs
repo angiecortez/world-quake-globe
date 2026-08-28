@@ -96,6 +96,19 @@ try {
     r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(blankStyle) }))
   await page.route('**://earthquake.usgs.gov/**', (r) =>
     r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(fixture) }))
+  // Banco Mundial mockeado igual que el USGS; las geometrias de paises NO se
+  // mockean: son un asset propio (public/data/countries.json) y el test debe
+  // fallar si el precomputo lo rompio.
+  await page.route('**://api.worldbank.org/**', (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([{ page: 1 }, [
+        { countryiso3code: 'PER', value: 26.3, date: '2022' },
+        { countryiso3code: 'JPN', value: 338.2, date: '2022' },
+        { countryiso3code: 'CHL', value: 26.5, date: '2022' },
+      ]]),
+    }))
 
   await page.goto(BASE, { waitUntil: 'load' })
   await page.waitForTimeout(5000)
@@ -191,6 +204,26 @@ try {
   await page.waitForTimeout(900)
   check('el boton de reproducir ofrece pausar (WCAG 2.2.2)',
     /Pausar/i.test((await page.locator('.btn-play').getAttribute('aria-label')) ?? ''))
+
+  // ------------------------------------------------------ capa de coropleta
+  await page.locator('.check-row input').check()
+  await page.waitForTimeout(2500)
+  // La asercion de render real (queryRenderedFeatures via el gancho de test):
+  // una expresion invalida hace que MapLibre rechace la capa entera y el mapa
+  // se veria perfecto sin pintar ni un pais.
+  check('la coropleta renderiza paises de verdad',
+    await page.evaluate(() =>
+      window.__wqgMap.queryRenderedFeatures({ layers: ['countries-fill'] }).length > 0))
+  check('la leyenda agrega la rampa de densidad',
+    (await page.locator('#legend-density').count()) === 1)
+  await page.selectOption('#country-query', 'PER')
+  await page.waitForTimeout(300)
+  const readout = (await page.locator('.country-readout').innerText()).trim()
+  check('la consulta por teclado da el valor en texto',
+    /Per(u|ú).*26\s*hab\/km/.test(readout), readout)
+
+  check('sin errores de consola tras todas las interacciones',
+    consoleErrors.length === 0, consoleErrors[0])
 
   await page.screenshot({ path: 'smoke.png' })
 } finally {

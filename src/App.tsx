@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { GlobeMap } from './map/GlobeMap'
 import type { FilterState } from './map/layers'
 import { FEEDS, fetchQuakes } from './data/usgs'
+import { fetchCountries, type CountryCollection } from './data/countries'
+import { fetchDensity, type DensityDatum } from './data/worldbank'
 import type { QuakeCollection, QuakeFeature } from './types'
 import { Controls, WINDOW_OPTIONS } from './ui/Controls'
 import { Legend } from './ui/Legend'
@@ -30,6 +32,15 @@ export default function App() {
   const [playing, setPlaying] = useState(false)
   const [spin, setSpin] = useState(!reducedMotion)
 
+  // --- capa de coropleta (densidad de poblacion) -----------------------
+  const [choropleth, setChoropleth] = useState(false)
+  const [countriesBase, setCountriesBase] = useState<CountryCollection | null>(null)
+  const [density, setDensity] = useState<Map<string, DensityDatum> | null>(null)
+  const [densityStatus, setDensityStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [densityRetryNonce, setDensityRetryNonce] = useState(0)
+  const densityLoadedRef = useRef(false)
+  const [countryQuery, setCountryQuery] = useState<string | null>(null)
+
   const [visibleIds, setVisibleIds] = useState<string[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [focusRequest, setFocusRequest] = useState<{ id: string; nonce: number } | null>(null)
@@ -56,6 +67,46 @@ export default function App() {
       })
     return () => ac.abort()
   }, [feedId, reloadNonce])
+
+  // --- carga perezosa de la coropleta ----------------------------------
+  // Geometrias (estatico precomputado) y Banco Mundial (en vivo) se cargan
+  // recien al encender la capa: quien no la usa no paga ni un byte.
+  // OJO: el estado de carga NO va en las dependencias — un efecto que
+  // depende del estado que el mismo setea se auto-aborta en el cleanup.
+  // El guard es un ref; el reintento entra por un nonce.
+  useEffect(() => {
+    if (!choropleth || densityLoadedRef.current) return
+    const ac = new AbortController()
+    setDensityStatus('loading')
+    Promise.all([fetchCountries(ac.signal), fetchDensity(ac.signal)])
+      .then(([fc, dens]) => {
+        densityLoadedRef.current = true
+        setCountriesBase(fc)
+        setDensity(dens)
+        setDensityStatus('ready')
+      })
+      .catch((err: unknown) => {
+        if ((err as Error)?.name === 'AbortError') return
+        setDensityStatus('error')
+      })
+    return () => ac.abort()
+  }, [choropleth, densityRetryNonce])
+
+  // El join geometria <-> indicador: `density` sube a properties para que
+  // las expresiones de MapLibre puedan pintar con ella (mismo patron que
+  // `depth` en los sismos).
+  const countries = useMemo<CountryCollection | null>(() => {
+    if (!countriesBase || !density) return null
+    return {
+      ...countriesBase,
+      features: countriesBase.features.map((f) => {
+        const d = density.get(f.properties.iso3)
+        return d
+          ? { ...f, properties: { ...f.properties, density: d.value, year: d.year } }
+          : f
+      }),
+    }
+  }, [countriesBase, density])
 
   const range = useMemo(() => {
     const times = data.features.map((f) => f.properties.time)
@@ -178,7 +229,10 @@ export default function App() {
             reducedMotion={reducedMotion}
             selectedId={selectedId}
             focusRequest={focusRequest}
+            countries={countries}
+            choropleth={choropleth}
             onSelect={handleMapSelect}
+            onCountrySelect={setCountryQuery}
             onVisibleChange={setVisibleIds}
             onUserInteract={handleUserInteract}
           />
@@ -205,8 +259,13 @@ export default function App() {
             playing={playing} onTogglePlay={() => setPlaying((p) => !p)}
             spin={spin} onToggleSpin={() => setSpin((s) => !s)}
             reducedMotion={reducedMotion}
+            choropleth={choropleth} onChoroplethChange={setChoropleth}
+            densityStatus={densityStatus}
+            onDensityRetry={() => setDensityRetryNonce((n) => n + 1)}
+            countries={countries}
+            countryQuery={countryQuery} onCountryQueryChange={setCountryQuery}
           />
-          <Legend />
+          <Legend choropleth={choropleth && densityStatus === 'ready'} />
         </aside>
       </main>
 

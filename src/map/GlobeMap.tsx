@@ -7,11 +7,13 @@ import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&ur
 
 setWorkerUrl(maplibreWorkerUrl)
 import type { QuakeCollection } from '../types'
+import type { CountryCollection } from '../data/countries'
 import {
   LAYER_GLOW, LAYER_MAIN, LAYER_PULSE, LAYER_SELECTED, SOURCE_ID,
   buildFilter, buildPulseFilter, circleRadius, depthColorExpr,
   type FilterState,
 } from './layers'
+import { COUNTRY_SOURCE, LAYER_CHORO_FILL, LAYER_CHORO_LINE, densityColorExpr } from './choropleth'
 
 /** Basemap oscuro de OpenFreeMap: vector tiles OSM, sin API key. */
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/dark'
@@ -26,7 +28,11 @@ export interface GlobeMapProps {
   reducedMotion: boolean
   selectedId: string | null
   focusRequest: { id: string; nonce: number } | null
+  /** null = coropleta apagada o sin datos todavia */
+  countries: CountryCollection | null
+  choropleth: boolean
   onSelect: (id: string | null) => void
+  onCountrySelect: (iso3: string | null) => void
   onVisibleChange: (ids: string[]) => void
   onUserInteract: () => void
 }
@@ -67,6 +73,32 @@ export function GlobeMap(props: GlobeMapProps) {
         'horizon-fog-blend': 0.55,
         'fog-ground-blend': 0.4,
         'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 0.9, 5, 0.4, 7, 0],
+      })
+
+      // La coropleta va DEBAJO de los sismos: contexto, no protagonista.
+      // Sus capas existen desde el inicio (con visibilidad apagada) para que
+      // encenderla sea un setLayoutProperty y no un re-armado de la pila.
+      map.addSource(COUNTRY_SOURCE, {
+        type: 'geojson',
+        data: cb.current.countries ?? { type: 'FeatureCollection', features: [] },
+      })
+      map.addLayer({
+        id: LAYER_CHORO_FILL,
+        type: 'fill',
+        source: COUNTRY_SOURCE,
+        layout: { visibility: cb.current.choropleth ? 'visible' : 'none' },
+        paint: {
+          'fill-color': densityColorExpr,
+          // Translucida para que las etiquetas del basemap sigan legibles.
+          'fill-opacity': 0.55,
+        },
+      })
+      map.addLayer({
+        id: LAYER_CHORO_LINE,
+        type: 'line',
+        source: COUNTRY_SOURCE,
+        layout: { visibility: cb.current.choropleth ? 'visible' : 'none' },
+        paint: { 'line-color': 'rgba(8,11,16,0.8)', 'line-width': 0.6 },
       })
 
       map.addSource(SOURCE_ID, {
@@ -136,6 +168,10 @@ export function GlobeMap(props: GlobeMapProps) {
       reportVisible(map, cb.current.onVisibleChange)
     })
 
+    // Gancho para el smoke test: permite afirmar que las capas REALMENTE
+    // renderizan (queryRenderedFeatures), no solo que el DOM existe.
+    ;(window as unknown as { __wqgMap?: MlMap }).__wqgMap = map
+
     map.on('click', LAYER_MAIN, (e: MapMouseEvent & { features?: Array<{ properties?: Record<string, unknown> }> }) => {
       const f = e.features?.[0]
       const id = f?.properties?.id
@@ -143,7 +179,14 @@ export function GlobeMap(props: GlobeMapProps) {
     })
     map.on('click', (e: MapMouseEvent) => {
       const hits = map.queryRenderedFeatures(e.point, { layers: [LAYER_MAIN] })
-      if (hits.length === 0) cb.current.onSelect(null)
+      if (hits.length > 0) return
+      cb.current.onSelect(null)
+      // Sin sismo bajo el click: si la coropleta esta activa, consulta el pais.
+      if (cb.current.choropleth && map.getLayer(LAYER_CHORO_FILL)) {
+        const countries = map.queryRenderedFeatures(e.point, { layers: [LAYER_CHORO_FILL] })
+        const iso3 = countries[0]?.properties?.iso3
+        cb.current.onCountrySelect(typeof iso3 === 'string' ? iso3 : null)
+      }
     })
     map.on('mouseenter', LAYER_MAIN, () => { map.getCanvas().style.cursor = 'pointer' })
     map.on('mouseleave', LAYER_MAIN, () => { map.getCanvas().style.cursor = '' })
@@ -184,6 +227,23 @@ export function GlobeMap(props: GlobeMapProps) {
     applyData(map, props.data)
     reportVisible(map, cb.current.onVisibleChange)
   }, [props.data])
+
+  // --- coropleta ------------------------------------------------------
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !readyRef.current || !props.countries) return
+    const src = map.getSource(COUNTRY_SOURCE)
+    if (src && 'setData' in src) (src as GeoJSONSource).setData(props.countries)
+  }, [props.countries])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !readyRef.current) return
+    const vis = props.choropleth ? 'visible' : 'none'
+    for (const id of [LAYER_CHORO_FILL, LAYER_CHORO_LINE]) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis)
+    }
+  }, [props.choropleth])
 
   // --- filtros --------------------------------------------------------
   useEffect(() => {

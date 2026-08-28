@@ -1,4 +1,7 @@
+import { useMemo } from 'react'
 import { FEEDS } from '../data/usgs'
+import type { CountryCollection } from '../data/countries'
+import { densityBand } from '../map/choropleth'
 import { formatDateTime } from './format'
 
 export const WINDOW_OPTIONS = [
@@ -25,10 +28,27 @@ export interface ControlsProps {
   spin: boolean
   onToggleSpin: () => void
   reducedMotion: boolean
+  choropleth: boolean
+  onChoroplethChange: (v: boolean) => void
+  densityStatus: 'idle' | 'loading' | 'ready' | 'error'
+  onDensityRetry: () => void
+  countries: CountryCollection | null
+  countryQuery: string | null
+  onCountryQueryChange: (iso3: string | null) => void
 }
 
 export function Controls(p: ControlsProps) {
   const disabledTime = !p.timeMode
+
+  const sortedCountries = useMemo(
+    () => (p.countries?.features ?? [])
+      .map((f) => f.properties)
+      .sort((a, b) => a.name.localeCompare(b.name, 'es')),
+    [p.countries],
+  )
+  const queried = p.countryQuery
+    ? sortedCountries.find((c) => c.iso3 === p.countryQuery) ?? null
+    : null
 
   return (
     <section className="controls" aria-labelledby="controls-title">
@@ -42,6 +62,50 @@ export function Controls(p: ControlsProps) {
           ))}
         </select>
       </div>
+
+      <fieldset className="field">
+        <legend>Capas</legend>
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={p.choropleth}
+            onChange={(e) => p.onChoroplethChange(e.target.checked)}
+          />
+          Densidad de poblacion <span className="legend-hint">(Banco Mundial)</span>
+        </label>
+        {p.choropleth && p.densityStatus === 'loading' && (
+          <p className="hint" role="status">Cargando geometrias y datos del Banco Mundial…</p>
+        )}
+        {p.choropleth && p.densityStatus === 'error' && (
+          <p className="hint" role="alert">
+            No se pudieron cargar los datos.{' '}
+            <button type="button" className="btn btn-inline" onClick={p.onDensityRetry}>Reintentar</button>
+          </p>
+        )}
+        {p.choropleth && p.densityStatus === 'ready' && (
+          <div className="subfield">
+            {/* La via de teclado al dato de la coropleta: el equivalente de la
+                tabla de sismos, pero para paises. Nada del mapa es la unica
+                ruta (WCAG 1.1.1 / 2.1.1). */}
+            <label htmlFor="country-query">Consultar un pais</label>
+            <select
+              id="country-query"
+              value={p.countryQuery ?? ''}
+              onChange={(e) => p.onCountryQueryChange(e.target.value || null)}
+            >
+              <option value="">— elegir —</option>
+              {sortedCountries.map((c) => (
+                <option key={c.iso3} value={c.iso3}>{c.name}</option>
+              ))}
+            </select>
+            <p className="country-readout" role="status">
+              {queried && (typeof queried.density === 'number'
+                ? `${queried.name}: ${Math.round(queried.density)} hab/km² (${densityBand(queried.density)}, dato de ${queried.year})`
+                : queried ? `${queried.name}: sin dato del Banco Mundial.` : '')}
+            </p>
+          </div>
+        )}
+      </fieldset>
 
       <div className="field">
         <label htmlFor="minmag">

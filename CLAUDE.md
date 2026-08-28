@@ -160,7 +160,12 @@ tres primeros salieron de correr la app en un navegador headless.
 3. **`["zoom"]` anidado dentro de `["*", ...]`.** MapLibre exige que `zoom` sea
    la entrada de un `interpolate`/`step` de primer nivel; si no, rechaza la capa
    completa al agregarla.
-4. **Debounce en vez de throttle.** Con el globo rotando, `moveend` se dispara
+4. **El efecto que se auto-abortaba.** El fetch de la coropleta tenia su
+   estado de carga en las dependencias del `useEffect`: al pasar a `loading`,
+   React corria el cleanup y el `AbortController` cancelaba SU PROPIO fetch.
+   Sintoma: spinner eterno, cero errores. El guard va en un ref y el reintento
+   entra por un nonce. (Encontrado por el smoke test, 28 ago 2026.)
+5. **Debounce en vez de throttle.** Con el globo rotando, `moveend` se dispara
    sin parar y el debounce nunca alcanzaba a ejecutarse: la tabla accesible se
    congelaba justo cuando el mapa se mueve.
 
@@ -187,9 +192,12 @@ no dispara el efecto porque React descarta el mismo valor).
    tabla/mapa en `openOriginRef`, `data-quake-id` en las filas). Sigue
    pendiente: prueba manual con VoiceOver/NVDA y contraste contra teselas
    reales.
-3. **Una sola capa.** El requisito dice "map layers" en plural y hoy todo son
-   puntos. Falta la coropleta por país (World Bank Indicators + geometrías de
-   Natural Earth) y el conmutador de capas.
+3. ~~**Una sola capa.**~~ **Hecho (28 ago 2026).** Coropleta de densidad de
+   poblacion (Banco Mundial `EN.POP.DNST` en vivo + Natural Earth 110m
+   precomputado en `public/data/countries.json`) con conmutador de capas,
+   rampa ambar validada (`scripts/validate-ramps.mjs`), leyenda propia y via
+   de teclado al dato (select de paises + `role="status"`). Carga perezosa:
+   quien no la enciende no paga ni un byte.
 4. **Cero ArcGIS.** Si su stack resulta ser Esri, no hay nada que mostrar. El
    POC comparativo ArcGIS SDK vs MapLibre (bundle size, costo, DX,
    accesibilidad) cubriría ese flanco y se lee muy senior.
