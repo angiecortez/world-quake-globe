@@ -38,7 +38,11 @@ proyecto es la prueba de eso.
 - Typecheck y build pasan; el smoke test pasa **28/28** en Chromium real
   (incluye axe-core con cero violaciones WCAG 2.1 A/AA).
 - Verificado contra datos y basemap reales: sismos del USGS, coropleta con el
-  Banco Mundial en vivo, clustering con el feed de ~10k, alto contraste.
+  Banco Mundial en vivo, clustering con el feed de ~10k, y las tres vistas del
+  planeta (oscura / satelite NASA GIBS / alto contraste) + capa de bordes de
+  placas PB2002 (agregadas el 28 ago 2026 a pedido de Angie: "que se vea algo
+  mas real al planeta" y la idea de "posibles sismos" a la Sismos Peru — que
+  se resolvio honestamente como capa de peligro, no de prediccion).
 - **OJO entorno local:** el `node` por defecto de nvm sigue siendo 21; todo
   corre con `export PATH=$HOME/.nvm/versions/node/v22.22.2/bin:$PATH` (o
   `nvm use 22`). Fijarlo con `nvm alias default 22` sigue pendiente de Angie.

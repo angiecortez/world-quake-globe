@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { FEEDS } from '../data/usgs'
 import type { CountryCollection } from '../data/countries'
 import { densityBand } from '../map/choropleth'
+import type { BasemapMode } from '../map/GlobeMap'
 import { formatDateTime } from './format'
 
 export const WINDOW_OPTIONS = [
@@ -30,8 +31,10 @@ export interface ControlsProps {
   reducedMotion: boolean
   choropleth: boolean
   onChoroplethChange: (v: boolean) => void
-  highContrast: boolean
-  onHighContrastChange: (v: boolean) => void
+  basemap: BasemapMode
+  onBasemapChange: (v: BasemapMode) => void
+  platesOn: boolean
+  onPlatesChange: (v: boolean) => void
   densityStatus: 'idle' | 'loading' | 'ready' | 'error'
   onDensityRetry: () => void
   countries: CountryCollection | null
@@ -65,20 +68,41 @@ export function Controls(p: ControlsProps) {
         </select>
       </div>
 
+      <div className="field">
+        <label htmlFor="basemap">Vista del planeta</label>
+        <select
+          id="basemap"
+          value={p.basemap}
+          onChange={(e) => p.onBasemapChange(e.target.value as BasemapMode)}
+        >
+          <option value="dark">Oscura — mapa vectorial con etiquetas</option>
+          <option value="satellite">Satelite — Blue Marble (NASA)</option>
+          <option value="contrast">Alto contraste — fondo negro y fronteras</option>
+        </select>
+        {p.basemap === 'satellite' && (
+          <p className="hint">
+            Imagery real del planeta (relieve y batimetria, sin etiquetas).
+            Nitida hasta zoom medio; para acercarse mucho, mejor la vista oscura.
+          </p>
+        )}
+        {p.basemap === 'contrast' && (
+          <p className="hint">
+            Fondo negro con fronteras blancas. Se activa sola si tu sistema
+            pide mas contraste.
+          </p>
+        )}
+      </div>
+
       <fieldset className="field">
         <legend>Capas</legend>
         <label className="check-row">
           <input
             type="checkbox"
-            checked={p.highContrast}
-            onChange={(e) => p.onHighContrastChange(e.target.checked)}
+            checked={p.platesOn}
+            onChange={(e) => p.onPlatesChange(e.target.checked)}
           />
-          Basemap de alto contraste
+          Bordes de placas tectonicas
         </label>
-        <p className="hint">
-          Reemplaza el mapa base por fondo negro con fronteras blancas. Se
-          activa solo si tu sistema pide mas contraste.
-        </p>
         <label className="check-row">
           <input
             type="checkbox"

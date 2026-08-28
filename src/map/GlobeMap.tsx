@@ -9,6 +9,7 @@ import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&ur
 setWorkerUrl(maplibreWorkerUrl)
 import type { QuakeCollection } from '../types'
 import type { CountryCollection } from '../data/countries'
+import type { PlateCollection } from '../data/plates'
 import {
   CLUSTER_COLOR, LAYER_CLUSTER, LAYER_CLUSTER_COUNT,
   LAYER_GLOW, LAYER_MAIN, LAYER_PULSE, LAYER_SELECTED, SOURCE_ID,
@@ -19,6 +20,14 @@ import { COUNTRY_SOURCE, LAYER_CHORO_FILL, LAYER_CHORO_LINE, densityColorExpr } 
 
 /** Basemap oscuro de OpenFreeMap: vector tiles OSM, sin API key. */
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/dark'
+/** Imagery Blue Marble (con relieve y batimetria) de NASA GIBS: sin key,
+ *  CORS abierto, nivel maximo 8 (~600 m/px — de sobra para un globo). */
+const SAT_TILES =
+  'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_ShadedRelief_Bathymetry/default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg'
+
+/** Las tres vistas del planeta. 'satellite' y 'contrast' apagan el basemap
+ *  de teselas vectoriales y ponen lo suyo debajo de las capas de datos. */
+export type BasemapMode = 'dark' | 'satellite' | 'contrast'
 const SPIN_DEG_PER_SEC = 3.2
 const PULSE_MS = 1000 * 60 * 60 * 12
 const PULSE_PERIOD = 1800
@@ -35,8 +44,10 @@ export interface GlobeMapProps {
   choropleth: boolean
   /** true = feed denso: los sismos se agrupan (ver addQuakeStack) */
   clustered: boolean
-  /** true = basemap reemplazado por fondo negro + fronteras propias */
-  highContrast: boolean
+  basemap: BasemapMode
+  /** null = capa de placas apagada o sin datos todavia */
+  plates: PlateCollection | null
+  platesOn: boolean
   onSelect: (id: string | null) => void
   onCountrySelect: (iso3: string | null) => void
   onVisibleChange: (ids: string[]) => void
@@ -113,11 +124,22 @@ export function GlobeMap(props: GlobeMapProps) {
         paint: { 'line-color': 'rgba(8,11,16,0.8)', 'line-width': 0.6 },
       })
 
+      // Bordes de placas: contexto de peligro sismico, entre coropleta y sismos.
+      map.addSource(PLATES_SOURCE, {
+        type: 'geojson',
+        data: cb.current.plates ?? { type: 'FeatureCollection', features: [] },
+      })
+      map.addLayer({
+        id: LAYER_PLATES,
+        type: 'line',
+        source: PLATES_SOURCE,
+        layout: { visibility: cb.current.platesOn ? 'visible' : 'none' },
+        paint: { 'line-color': '#e8694a', 'line-width': 1.2, 'line-opacity': 0.85 },
+      })
+
       addQuakeStack(map, cb.current.data, cb.current.filter, cb.current.clustered)
       builtClusteredRef.current = cb.current.clustered
-      if (cb.current.highContrast) {
-        applyHighContrast(map, true, cb.current.countries, hiddenBaseLayersRef)
-      }
+      applyBasemapMode(map, cb.current.basemap, cb.current.countries, hiddenBaseLayersRef)
 
       readyRef.current = true
       applyFilter(map, cb.current.filter, cb.current.clustered)
@@ -204,6 +226,7 @@ export function GlobeMap(props: GlobeMapProps) {
       addQuakeStack(map, props.data, cb.current.filter, props.clustered)
       builtClusteredRef.current = props.clustered
       applyFilter(map, cb.current.filter, props.clustered)
+      setMarkStroke(map, cb.current.basemap)
     } else {
       applyData(map, props.clustered
         ? { ...props.data, features: filterFeatures(props.data.features, cb.current.filter) }
@@ -222,12 +245,26 @@ export function GlobeMap(props: GlobeMapProps) {
     if (hc && 'setData' in hc) (hc as GeoJSONSource).setData(props.countries)
   }, [props.countries])
 
-  // --- alto contraste -------------------------------------------------
+  // --- vista del basemap ----------------------------------------------
   useEffect(() => {
     const map = mapRef.current
     if (!map || !readyRef.current) return
-    applyHighContrast(map, props.highContrast, props.countries, hiddenBaseLayersRef)
-  }, [props.highContrast, props.countries])
+    applyBasemapMode(map, props.basemap, props.countries, hiddenBaseLayersRef)
+  }, [props.basemap, props.countries])
+
+  // --- placas tectonicas ----------------------------------------------
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !readyRef.current || !props.plates) return
+    const src = map.getSource(PLATES_SOURCE)
+    if (src && 'setData' in src) (src as GeoJSONSource).setData(props.plates)
+  }, [props.plates])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !readyRef.current || !map.getLayer(LAYER_PLATES)) return
+    map.setLayoutProperty(LAYER_PLATES, 'visibility', props.platesOn ? 'visible' : 'none')
+  }, [props.platesOn])
 
   useEffect(() => {
     const map = mapRef.current
@@ -450,70 +487,113 @@ function addQuakeStack(map: MlMap, data: QuakeCollection, filter: FilterState, c
 export const HC_SOURCE = 'hc-countries'
 export const HC_LAYER_BG = 'hc-background'
 export const HC_LAYER_LINE = 'hc-countries-line'
+export const SAT_SOURCE = 'satellite'
+export const SAT_LAYER = 'satellite-img'
+export const PLATES_SOURCE = 'plates'
+export const LAYER_PLATES = 'plates-line'
+
+/** Capas que pertenecen a la app (datos y modos), no al basemap de teselas. */
+const APP_LAYERS = new Set<string>([
+  LAYER_PLATES, LAYER_CHORO_FILL, LAYER_CHORO_LINE, LAYER_GLOW, LAYER_PULSE,
+  LAYER_MAIN, LAYER_SELECTED, LAYER_CLUSTER, LAYER_CLUSTER_COUNT,
+  HC_LAYER_BG, HC_LAYER_LINE, SAT_LAYER,
+])
 
 /**
- * Modo de alto contraste: en vez de cambiar a otro estilo de teselas (lo que
- * destruiria las capas propias y traeria OTRO fondo contra el que la rampa no
- * fue validada), se apaga el basemap entero y se reemplaza por fondo negro +
- * fronteras blancas desde las geometrias propias. El dato queda con el maximo
- * contraste posible y las rampas validadas contra fondo oscuro solo mejoran.
- * Reversible: las capas ocultadas se recuerdan y se restauran.
+ * Las tres vistas del planeta, sin cambiar de estilo de teselas (eso
+ * destruiria las capas propias y traeria otro fondo contra el que las rampas
+ * no fueron validadas). En su lugar, el basemap vectorial se oculta y se pone
+ * lo propio debajo de las capas de datos:
+ *
+ * - **dark**: el estilo oscuro de OpenFreeMap tal cual.
+ * - **satellite**: imagery Blue Marble (relieve + batimetria) de NASA GIBS.
+ *   Los marcadores cambian su anillo a blanco: sobre imagery variada el
+ *   anillo oscuro no separa (WCAG 1.4.11).
+ * - **contrast**: fondo negro + fronteras blancas desde geometrias propias.
+ *   Las rampas, validadas contra fondo oscuro, solo mejoran.
+ *
+ * Siempre restaura a 'dark' primero: cada modo parte del mismo estado.
  */
-function applyHighContrast(
+function applyBasemapMode(
   map: MlMap,
-  on: boolean,
+  mode: BasemapMode,
   countries: CountryCollection | null,
   hiddenRef: { current: string[] | null },
 ) {
-  const APP_LAYERS = new Set<string>([
-    LAYER_CHORO_FILL, LAYER_CHORO_LINE, LAYER_GLOW, LAYER_PULSE, LAYER_MAIN,
-    LAYER_SELECTED, LAYER_CLUSTER, LAYER_CLUSTER_COUNT, HC_LAYER_BG, HC_LAYER_LINE,
-  ])
+  // --- restaurar el estado base -----------------------------------------
+  for (const id of hiddenRef.current ?? []) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible')
+  }
+  hiddenRef.current = null
+  for (const id of [HC_LAYER_LINE, HC_LAYER_BG, SAT_LAYER]) {
+    if (map.getLayer(id)) map.removeLayer(id)
+  }
+  setMarkStroke(map, mode)
+  if (mode === 'dark') return
 
-  if (on) {
-    const firstId = map.getStyle().layers[0]?.id
-    if (!map.getLayer(HC_LAYER_BG)) {
-      map.addLayer(
-        { id: HC_LAYER_BG, type: 'background', paint: { 'background-color': '#000000' } },
-        firstId,
-      )
+  // --- ocultar el basemap de teselas ------------------------------------
+  const hidden: string[] = []
+  for (const layer of map.getStyle().layers) {
+    if (APP_LAYERS.has(layer.id)) continue
+    if (map.getLayoutProperty(layer.id, 'visibility') !== 'none') {
+      map.setLayoutProperty(layer.id, 'visibility', 'none')
+      hidden.push(layer.id)
     }
-    const hidden: string[] = hiddenRef.current ?? []
-    for (const layer of map.getStyle().layers) {
-      if (APP_LAYERS.has(layer.id)) continue
-      if (map.getLayoutProperty(layer.id, 'visibility') !== 'none') {
-        map.setLayoutProperty(layer.id, 'visibility', 'none')
-        hidden.push(layer.id)
-      }
-    }
-    hiddenRef.current = hidden
-    if (!map.getSource(HC_SOURCE)) {
-      map.addSource(HC_SOURCE, {
-        type: 'geojson',
-        data: countries ?? { type: 'FeatureCollection', features: [] },
+  }
+  hiddenRef.current = hidden
+  const firstId = map.getStyle().layers[0]?.id
+
+  if (mode === 'satellite') {
+    if (!map.getSource(SAT_SOURCE)) {
+      map.addSource(SAT_SOURCE, {
+        type: 'raster',
+        tiles: [SAT_TILES],
+        tileSize: 256,
+        maxzoom: 8,
+        attribution: 'Imagery: NASA EOSDIS GIBS / Blue Marble',
       })
     }
-    if (!map.getLayer(HC_LAYER_LINE)) {
-      map.addLayer(
-        {
-          id: HC_LAYER_LINE,
-          type: 'line',
-          source: HC_SOURCE,
-          paint: { 'line-color': '#ffffff', 'line-width': 0.7, 'line-opacity': 0.85 },
-        },
-        // Encima de la coropleta (los fills lavarian las lineas) y debajo
-        // de los sismos.
-        map.getLayer(LAYER_GLOW) ? LAYER_GLOW : undefined,
-      )
-    }
-  } else {
-    for (const id of hiddenRef.current ?? []) {
-      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible')
-    }
-    hiddenRef.current = null
-    if (map.getLayer(HC_LAYER_LINE)) map.removeLayer(HC_LAYER_LINE)
-    if (map.getLayer(HC_LAYER_BG)) map.removeLayer(HC_LAYER_BG)
+    map.addLayer({ id: SAT_LAYER, type: 'raster', source: SAT_SOURCE }, firstId)
+    return
   }
+
+  // mode === 'contrast'
+  if (!map.getLayer(HC_LAYER_BG)) {
+    map.addLayer(
+      { id: HC_LAYER_BG, type: 'background', paint: { 'background-color': '#000000' } },
+      firstId,
+    )
+  }
+  if (!map.getSource(HC_SOURCE)) {
+    map.addSource(HC_SOURCE, {
+      type: 'geojson',
+      data: countries ?? { type: 'FeatureCollection', features: [] },
+    })
+  }
+  if (!map.getLayer(HC_LAYER_LINE)) {
+    map.addLayer(
+      {
+        id: HC_LAYER_LINE,
+        type: 'line',
+        source: HC_SOURCE,
+        paint: { 'line-color': '#ffffff', 'line-width': 0.7, 'line-opacity': 0.85 },
+      },
+      // Encima de la coropleta (los fills lavarian las lineas) y debajo
+      // de los sismos.
+      map.getLayer(LAYER_GLOW) ? LAYER_GLOW : undefined,
+    )
+  }
+}
+
+/** Sobre imagery el anillo de separacion de las marcas es blanco;
+ *  sobre fondos oscuros es oscuro (regla del ring de superficie). */
+function setMarkStroke(map: MlMap, mode: BasemapMode) {
+  if (!map.getLayer(LAYER_MAIN)) return
+  map.setPaintProperty(
+    LAYER_MAIN,
+    'circle-stroke-color',
+    mode === 'satellite' ? 'rgba(255,255,255,0.9)' : 'rgba(8,11,16,0.9)',
+  )
 }
 
 function removeQuakeStack(map: MlMap) {

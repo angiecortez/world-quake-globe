@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { GlobeMap } from './map/GlobeMap'
+import { GlobeMap, type BasemapMode } from './map/GlobeMap'
 import type { FilterState } from './map/layers'
 import { FEEDS, fetchQuakes } from './data/usgs'
 import { fetchCountries, type CountryCollection } from './data/countries'
+import { fetchPlates, type PlateCollection } from './data/plates'
 import { fetchDensity, type DensityDatum } from './data/worldbank'
 import type { QuakeCollection, QuakeFeature } from './types'
 import { Controls, WINDOW_OPTIONS } from './ui/Controls'
@@ -20,12 +21,12 @@ const PLAY_MS_PER_SECOND = 1000 * 60 * 60 * 18
 export default function App() {
   const reducedMotion = useReducedMotion()
 
-  // --- alto contraste ---------------------------------------------------
-  // El sistema puede pedirlo (prefers-contrast) y el usuario puede
-  // activarlo a mano; el toggle manual manda una vez tocado.
+  // --- vista del basemap ------------------------------------------------
+  // El sistema puede pedir mas contraste (prefers-contrast) y el usuario
+  // puede elegir la vista a mano; la eleccion manual manda una vez tocada.
   const systemContrast = useMediaQuery('(prefers-contrast: more)')
-  const [contrastOverride, setContrastOverride] = useState<boolean | null>(null)
-  const highContrast = contrastOverride ?? systemContrast
+  const [basemapChoice, setBasemapChoice] = useState<BasemapMode | null>(null)
+  const basemap: BasemapMode = basemapChoice ?? (systemContrast ? 'contrast' : 'dark')
 
   const [feedId, setFeedId] = useState(FEEDS[0].id)
   const [data, setData] = useState<QuakeCollection>(EMPTY)
@@ -48,6 +49,10 @@ export default function App() {
   const [densityRetryNonce, setDensityRetryNonce] = useState(0)
   const densityLoadedRef = useRef(false)
   const [countryQuery, setCountryQuery] = useState<string | null>(null)
+
+  // --- capa de placas tectonicas ---------------------------------------
+  const [platesOn, setPlatesOn] = useState(false)
+  const [plates, setPlates] = useState<PlateCollection | null>(null)
 
   const [visibleIds, setVisibleIds] = useState<string[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -84,13 +89,22 @@ export default function App() {
   // depende del estado que el mismo setea se auto-aborta en el cleanup.
   // El guard es un ref; el reintento entra por un nonce.
   useEffect(() => {
-    if (!(choropleth || highContrast) || countriesBase) return
+    if (!(choropleth || basemap === 'contrast') || countriesBase) return
     const ac = new AbortController()
     fetchCountries(ac.signal)
       .then(setCountriesBase)
       .catch(() => { /* sin geometrias: la coropleta lo reporta por su via */ })
     return () => ac.abort()
-  }, [choropleth, highContrast, countriesBase, densityRetryNonce])
+  }, [choropleth, basemap, countriesBase, densityRetryNonce])
+
+  useEffect(() => {
+    if (!platesOn || plates) return
+    const ac = new AbortController()
+    fetchPlates(ac.signal)
+      .then(setPlates)
+      .catch(() => { /* sin placas: la capa simplemente no aparece */ })
+    return () => ac.abort()
+  }, [platesOn, plates])
 
   useEffect(() => {
     if (!choropleth || densityLoadedRef.current) return
@@ -252,7 +266,9 @@ export default function App() {
             countries={countries}
             choropleth={choropleth}
             clustered={!!feed.cluster}
-            highContrast={highContrast}
+            basemap={basemap}
+            plates={plates}
+            platesOn={platesOn}
             onSelect={handleMapSelect}
             onCountrySelect={setCountryQuery}
             onVisibleChange={setVisibleIds}
@@ -282,13 +298,14 @@ export default function App() {
             spin={spin} onToggleSpin={() => setSpin((s) => !s)}
             reducedMotion={reducedMotion}
             choropleth={choropleth} onChoroplethChange={setChoropleth}
-            highContrast={highContrast} onHighContrastChange={setContrastOverride}
+            basemap={basemap} onBasemapChange={setBasemapChoice}
+            platesOn={platesOn} onPlatesChange={setPlatesOn}
             densityStatus={choroStatus}
             onDensityRetry={() => setDensityRetryNonce((n) => n + 1)}
             countries={countries}
             countryQuery={countryQuery} onCountryQueryChange={setCountryQuery}
           />
-          <Legend choropleth={choropleth && choroStatus === 'ready'} clustered={!!feed.cluster} />
+          <Legend choropleth={choropleth && choroStatus === 'ready'} clustered={!!feed.cluster} plates={platesOn} />
         </aside>
       </main>
 

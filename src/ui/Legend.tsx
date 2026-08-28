@@ -7,7 +7,13 @@ const MAG_SAMPLES = [3, 5, 7]
  *  Ninguna de las dos variables depende solo del color (WCAG 1.4.1).
  *  La coropleta usa el tono complementario (ambar) para no pisar el canal
  *  de color de los sismos. */
-export function Legend({ choropleth = false, clustered = false }: { choropleth?: boolean; clustered?: boolean }) {
+export interface LegendProps {
+  choropleth?: boolean
+  clustered?: boolean
+  plates?: boolean
+}
+
+export function Legend({ choropleth = false, clustered = false, plates = false }: LegendProps) {
   return (
     <section className="legend" aria-labelledby="legend-title">
       <h2 id="legend-title" className="panel-title">Leyenda</h2>
@@ -35,6 +41,22 @@ export function Legend({ choropleth = false, clustered = false }: { choropleth?:
           </li>
         ))}
       </ul>
+
+      {plates && (
+        <>
+          <h3 className="legend-sub" id="legend-plates">Placas tectonicas</h3>
+          <ul className="legend-depths" aria-labelledby="legend-plates">
+            <li>
+              <span className="legend-swatch legend-swatch-plates" aria-hidden="true" />
+              <span className="legend-label">borde de placa (PB2002)</span>
+            </li>
+          </ul>
+          <p className="legend-note">
+            Los sismos no se pueden predecir; lo que si se sabe es donde se
+            concentra el peligro: cerca del 90% ocurre sobre estos bordes.
+          </p>
+        </>
+      )}
 
       {clustered && (
         <>

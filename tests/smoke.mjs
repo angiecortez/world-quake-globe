@@ -99,6 +99,9 @@ try {
   // Banco Mundial mockeado igual que el USGS; las geometrias de paises NO se
   // mockean: son un asset propio (public/data/countries.json) y el test debe
   // fallar si el precomputo lo rompio.
+  // Teselas satelitales de NASA GIBS: 204 = "tesela vacia" valida para
+  // MapLibre, sin depender de la red ni de imagery real.
+  await page.route('**://gibs.earthdata.nasa.gov/**', (r) => r.fulfill({ status: 204, body: '' }))
   // Glifos para las etiquetas de conteo de los clusters: un PBF vacio valido
   // (el estilo mockeado no tiene fuentes reales y el test no debe depender
   // de ellas). Registrado despues del route generico para tener prioridad.
@@ -243,24 +246,42 @@ try {
   check('la consulta por teclado da el valor en texto',
     /Per(u|ú).*26\s*hab\/km/.test(readout), readout)
 
-  // --------------------------------------------------------- alto contraste
-  await page.getByRole('checkbox', { name: /alto contraste/i }).check()
+  // ------------------------------------------------------ vistas del planeta
+  await page.selectOption('#basemap', 'contrast')
   await page.waitForTimeout(1500)
-  check('alto contraste: basemap apagado, fondo y fronteras propias puestos',
+  check('vista alto contraste: basemap apagado, fondo y fronteras propias',
     await page.evaluate(() => {
       const m = window.__wqgMap
       return m.getLayoutProperty('bg', 'visibility') === 'none' &&
         Boolean(m.getLayer('hc-background')) &&
         m.queryRenderedFeatures({ layers: ['hc-countries-line'] }).length > 0
     }))
-  await page.getByRole('checkbox', { name: /alto contraste/i }).uncheck()
+  await page.selectOption('#basemap', 'satellite')
+  await page.waitForTimeout(1500)
+  check('vista satelite: raster de NASA GIBS puesto y basemap apagado',
+    await page.evaluate(() => {
+      const m = window.__wqgMap
+      return Boolean(m.getLayer('satellite-img')) && !m.getLayer('hc-background') &&
+        m.getLayoutProperty('bg', 'visibility') === 'none' &&
+        m.getPaintProperty('quakes-main', 'circle-stroke-color') === 'rgba(255,255,255,0.9)'
+    }))
+  await page.selectOption('#basemap', 'dark')
   await page.waitForTimeout(800)
-  check('alto contraste: apagarlo restaura el basemap',
+  check('volver a la vista oscura restaura el basemap',
     await page.evaluate(() => {
       const m = window.__wqgMap
       return m.getLayoutProperty('bg', 'visibility') !== 'none' &&
-        !m.getLayer('hc-background') && !m.getLayer('hc-countries-line')
+        !m.getLayer('hc-background') && !m.getLayer('satellite-img')
     }))
+
+  // ------------------------------------------------------ placas tectonicas
+  await page.getByRole('checkbox', { name: /placas tectonicas/i }).check()
+  await page.waitForTimeout(1500)
+  check('la capa de placas renderiza bordes de verdad',
+    await page.evaluate(() =>
+      window.__wqgMap.queryRenderedFeatures({ layers: ['plates-line'] }).length > 0))
+  check('la leyenda de placas dice que los sismos no se pueden predecir',
+    /no se pueden predecir/.test(await page.locator('.legend').innerText()))
 
   // ------------------------------------------------------------- clustering
   await page.locator('input[type="radio"]').first().check()  // todo el periodo

@@ -8,7 +8,16 @@ mes como circulos azules sobre los Andes y la coropleta ambar de densidad de
 poblacion debajo, controles de capas, filtro y linea de tiempo, y leyenda de
 magnitud y profundidad](docs/screenshot.png)
 
-*La captura se regenera con `node tests/capture.mjs` (requiere `npm run build` previo).*
+*La vista satelital: el planeta real (NASA Blue Marble) con los bordes de
+placas tectonicas — los sismos caen exactamente sobre ellos.*
+
+![La misma app en vista satelital: la Tierra real con oceanos batimetricos y
+continentes en color natural, los bordes de placas tectonicas como lineas
+naranjas y los sismos como circulos con anillo blanco cayendo sobre esos
+bordes](docs/screenshot-satellite.png)
+
+*Ambas capturas se regeneran con `node tests/capture.mjs` (requiere `npm run
+build` previo).*
 
 El proyecto existe para demostrar tres cosas a la vez:
 
@@ -44,6 +53,8 @@ distinto de cero si algo falla, asi que sirve tal cual en CI.
 | Basemap | [OpenFreeMap](https://openfreemap.org) estilo `dark` | no | vector tiles OSM |
 | Densidad de poblacion | [World Bank Indicators v2](https://datahelpdesk.worldbank.org/knowledgebase/topics/125589) (`EN.POP.DNST`, `mrnev=1`) | no | CORS abierto; valor no nulo mas reciente por pais |
 | Geometrias de paises | [Natural Earth 110m](https://www.naturalearthdata.com) | no | precomputadas por `scripts/prepare-countries.mjs` a ~170 KB |
+| Imagery satelital | [NASA EOSDIS GIBS](https://www.earthdata.nasa.gov/engage/open-data-services-software/earthdata-developer-portal/gibs-api) — Blue Marble relieve+batimetria | no | raster WMTS, CORS abierto, hasta nivel 8 |
+| Placas tectonicas | [PB2002 (Peter Bird)](https://github.com/fraxen/tectonicplates) | no | precomputadas por `scripts/prepare-plates.mjs` a ~110 KB |
 
 El feed del USGS ya viene en GeoJSON, asi que entra directo al `GeoJSONSource`
 de MapLibre. La unica normalizacion en `src/data/usgs.ts` es **subir la
@@ -61,6 +72,30 @@ filtrar ni pintar por profundidad.
 - **Estatico precomputado** — las geometrias de paises (Natural Earth 110m)
   se recortan y cuantizan UNA vez con `scripts/prepare-countries.mjs` y se
   versionan: ni el build ni el runtime dependen de Natural Earth.
+
+## Las tres vistas del planeta
+
+El selector "Vista del planeta" cambia el basemap **sin cambiar de estilo de
+teselas** (eso destruiria las capas propias): se ocultan las capas del basemap
+vectorial y se pone lo propio debajo de los datos.
+
+- **Oscura** — OpenFreeMap `dark`, con etiquetas. La vista por defecto, contra
+  la que estan validadas las rampas.
+- **Satelite** — Blue Marble de NASA GIBS (relieve + batimetria): el planeta
+  real. Sobre imagery variada el anillo de las marcas pasa a blanco
+  (WCAG 1.4.11). Sin key y con CORS abierto.
+- **Alto contraste** — fondo negro + fronteras blancas desde las geometrias
+  propias. Se activa sola con `prefers-contrast: more`.
+
+### La capa de placas tectonicas (o: por que no "predecimos" sismos)
+
+Paginas como las de sismos de Peru muestran "posibles sismos"; lo que hay
+detras es peligro sismico, no prediccion — **los sismos no se pueden
+predecir**. La respuesta honesta y global a "¿donde van a ocurrir?" es la capa
+de bordes de placas (modelo PB2002): cerca del 90% de los sismos ocurre sobre
+esos bordes, y al encenderla se ve a los sismos del mes calcar las lineas. La
+leyenda lo dice en texto, para que el mapa no insinue algo que la sismologia
+no puede prometer.
 
 ## Codificacion visual
 
@@ -144,7 +179,7 @@ salieron de correr la app en un navegador headless, no del typecheck.
 ## Verificacion
 
 `tests/smoke.mjs` mockea el feed del USGS y el basemap (el test no debe fallar
-porque un tercero este lento) y comprueba 28 cosas en un navegador real:
+porque un tercero este lento) y comprueba 31 cosas en un navegador real:
 
 - que la app monte sin errores de pagina ni de consola,
 - que **las capas efectivamente rendericen sismos** — la asercion que caza el
@@ -166,8 +201,11 @@ porque un tercero este lento) y comprueba 28 cosas en un navegador real:
 - que la coropleta **renderice paises de verdad** (`queryRenderedFeatures`,
   la misma clase de asercion que caza capas rechazadas), que la leyenda sume
   la rampa de densidad, y que la consulta por pais de el valor en texto,
-- que el modo de alto contraste apague el basemap, ponga el fondo y las
-  fronteras propias, y que apagarlo lo restaure todo,
+- que las tres vistas del planeta funcionen: alto contraste (fondo y
+  fronteras propias), satelite (raster de GIBS puesto, anillo de marcas en
+  blanco) y la vuelta a la oscura restaurando todo,
+- que la capa de placas renderice bordes de verdad y que su leyenda diga que
+  los sismos no se pueden predecir,
 - que el feed denso forme grupos de verdad y que **los filtros atraviesen la
   agregacion** — subir la magnitud minima por encima del maximo debe vaciar
   clusters y sismos por igual (la asercion de que los clusters no mienten),

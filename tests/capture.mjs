@@ -1,4 +1,6 @@
-// Captura para el README: app real, datos reales del USGS, basemap real.
+// Capturas para el README: app real, datos reales del USGS, basemap real.
+// Genera la vista oscura (docs/screenshot.png) y la satelital con placas
+// (docs/screenshot-satellite.png) en una sola corrida.
 import { chromium } from 'playwright'
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -24,7 +26,15 @@ try {
   await page.evaluate(() => window.__wqgMap.jumpTo({ center: [-68, -14], zoom: 1.9 }))
   await page.waitForTimeout(8000)  // teselas del basemap
   await page.screenshot({ path: 'docs/screenshot.png' })
-  console.log('captura ok')
+
+  // Segunda captura: satelite + placas (sin coropleta, para que las placas
+  // y los sismos sean los protagonistas sobre el planeta real).
+  await page.getByRole('checkbox', { name: /Densidad de poblacion/ }).uncheck()
+  await page.selectOption('#basemap', 'satellite')
+  await page.getByRole('checkbox', { name: /placas tectonicas/i }).check()
+  await page.waitForTimeout(10000)  // imagery de GIBS
+  await page.screenshot({ path: 'docs/screenshot-satellite.png' })
+  console.log('capturas ok')
 } finally {
   await browser?.close()
   server.kill()
