@@ -10,6 +10,7 @@ import { Legend } from './ui/Legend'
 import { QuakeTable } from './ui/QuakeTable'
 import { DetailPanel } from './ui/DetailPanel'
 import { useReducedMotion } from './hooks/useReducedMotion'
+import { useMediaQuery } from './hooks/useMediaQuery'
 import { formatDate } from './ui/format'
 
 const EMPTY: QuakeCollection = { type: 'FeatureCollection', features: [] }
@@ -18,6 +19,13 @@ const PLAY_MS_PER_SECOND = 1000 * 60 * 60 * 18
 
 export default function App() {
   const reducedMotion = useReducedMotion()
+
+  // --- alto contraste ---------------------------------------------------
+  // El sistema puede pedirlo (prefers-contrast) y el usuario puede
+  // activarlo a mano; el toggle manual manda una vez tocado.
+  const systemContrast = useMediaQuery('(prefers-contrast: more)')
+  const [contrastOverride, setContrastOverride] = useState<boolean | null>(null)
+  const highContrast = contrastOverride ?? systemContrast
 
   const [feedId, setFeedId] = useState(FEEDS[0].id)
   const [data, setData] = useState<QuakeCollection>(EMPTY)
@@ -68,20 +76,29 @@ export default function App() {
     return () => ac.abort()
   }, [feedId, reloadNonce])
 
-  // --- carga perezosa de la coropleta ----------------------------------
-  // Geometrias (estatico precomputado) y Banco Mundial (en vivo) se cargan
-  // recien al encender la capa: quien no la usa no paga ni un byte.
+  // --- carga perezosa ---------------------------------------------------
+  // Geometrias (estatico precomputado): las necesitan la coropleta Y el
+  // modo de alto contraste. Banco Mundial (en vivo): solo la coropleta.
+  // Nada de esto se carga hasta que alguien lo enciende.
   // OJO: el estado de carga NO va en las dependencias — un efecto que
   // depende del estado que el mismo setea se auto-aborta en el cleanup.
   // El guard es un ref; el reintento entra por un nonce.
   useEffect(() => {
+    if (!(choropleth || highContrast) || countriesBase) return
+    const ac = new AbortController()
+    fetchCountries(ac.signal)
+      .then(setCountriesBase)
+      .catch(() => { /* sin geometrias: la coropleta lo reporta por su via */ })
+    return () => ac.abort()
+  }, [choropleth, highContrast, countriesBase, densityRetryNonce])
+
+  useEffect(() => {
     if (!choropleth || densityLoadedRef.current) return
     const ac = new AbortController()
     setDensityStatus('loading')
-    Promise.all([fetchCountries(ac.signal), fetchDensity(ac.signal)])
-      .then(([fc, dens]) => {
+    fetchDensity(ac.signal)
+      .then((dens) => {
         densityLoadedRef.current = true
-        setCountriesBase(fc)
         setDensity(dens)
         setDensityStatus('ready')
       })
@@ -96,7 +113,8 @@ export default function App() {
   // las expresiones de MapLibre puedan pintar con ella (mismo patron que
   // `depth` en los sismos).
   const countries = useMemo<CountryCollection | null>(() => {
-    if (!countriesBase || !density) return null
+    if (!countriesBase) return null
+    if (!density) return countriesBase
     return {
       ...countriesBase,
       features: countriesBase.features.map((f) => {
@@ -200,6 +218,8 @@ export default function App() {
   }, [visibleQuakes.length, timeMode, playhead, status])
 
   const feed = FEEDS.find((f) => f.id === feedId)!
+  // "Listo" para la UI de coropleta = indicador Y geometrias presentes.
+  const choroStatus = densityStatus === 'ready' && !countries ? 'loading' : densityStatus
 
   return (
     <div className="app">
@@ -232,6 +252,7 @@ export default function App() {
             countries={countries}
             choropleth={choropleth}
             clustered={!!feed.cluster}
+            highContrast={highContrast}
             onSelect={handleMapSelect}
             onCountrySelect={setCountryQuery}
             onVisibleChange={setVisibleIds}
@@ -261,12 +282,13 @@ export default function App() {
             spin={spin} onToggleSpin={() => setSpin((s) => !s)}
             reducedMotion={reducedMotion}
             choropleth={choropleth} onChoroplethChange={setChoropleth}
-            densityStatus={densityStatus}
+            highContrast={highContrast} onHighContrastChange={setContrastOverride}
+            densityStatus={choroStatus}
             onDensityRetry={() => setDensityRetryNonce((n) => n + 1)}
             countries={countries}
             countryQuery={countryQuery} onCountryQueryChange={setCountryQuery}
           />
-          <Legend choropleth={choropleth && densityStatus === 'ready'} clustered={!!feed.cluster} />
+          <Legend choropleth={choropleth && choroStatus === 'ready'} clustered={!!feed.cluster} />
         </aside>
       </main>
 

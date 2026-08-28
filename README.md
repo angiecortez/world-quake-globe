@@ -98,6 +98,7 @@ filtrar ni pintar por profundidad.
 | 4.1.3 Mensajes de estado | Region `aria-live="polite"` con el conteo de sismos visibles, **con debounce de 1.2s**: sin el, girar el globo inundaria al lector de pantalla. |
 | Extra: `prefers-reduced-motion` | Apaga rotacion, pulso y vuelos; `flyTo` se degrada a `jumpTo`. |
 | Extra: `forced-colors` | Los swatches de la leyenda mantienen su color; el resto adopta la paleta del sistema. |
+| Extra: alto contraste | Toggle que apaga el basemap entero y lo reemplaza por fondo negro + fronteras blancas desde las geometrias propias (las rampas, validadas contra fondo oscuro, solo mejoran). Se enciende solo si el sistema pide `prefers-contrast: more`. |
 
 ## Notas de rendimiento
 
@@ -143,7 +144,7 @@ salieron de correr la app en un navegador headless, no del typecheck.
 ## Verificacion
 
 `tests/smoke.mjs` mockea el feed del USGS y el basemap (el test no debe fallar
-porque un tercero este lento) y comprueba 26 cosas en un navegador real:
+porque un tercero este lento) y comprueba 28 cosas en un navegador real:
 
 - que la app monte sin errores de pagina ni de consola,
 - que **las capas efectivamente rendericen sismos** — la asercion que caza el
@@ -165,6 +166,8 @@ porque un tercero este lento) y comprueba 26 cosas en un navegador real:
 - que la coropleta **renderice paises de verdad** (`queryRenderedFeatures`,
   la misma clase de asercion que caza capas rechazadas), que la leyenda sume
   la rampa de densidad, y que la consulta por pais de el valor en texto,
+- que el modo de alto contraste apague el basemap, ponga el fondo y las
+  fronteras propias, y que apagarlo lo restaure todo,
 - que el feed denso forme grupos de verdad y que **los filtros atraviesen la
   agregacion** — subir la magnitud minima por encima del maximo debe vaciar
   clusters y sismos por igual (la asercion de que los clusters no mienten),
@@ -183,5 +186,4 @@ VoiceOver.
 ## Pendientes
 
 - Capa de calidad del aire (Open-Meteo, sin key) y OpenAQ detras de una edge function.
-- Prueba manual con lector de pantalla real (VoiceOver/NVDA) y un modo de
-  alto contraste del basemap.
+- Prueba manual con lector de pantalla real (VoiceOver/NVDA).

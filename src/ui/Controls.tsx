@@ -30,6 +30,8 @@ export interface ControlsProps {
   reducedMotion: boolean
   choropleth: boolean
   onChoroplethChange: (v: boolean) => void
+  highContrast: boolean
+  onHighContrastChange: (v: boolean) => void
   densityStatus: 'idle' | 'loading' | 'ready' | 'error'
   onDensityRetry: () => void
   countries: CountryCollection | null
@@ -65,6 +67,18 @@ export function Controls(p: ControlsProps) {
 
       <fieldset className="field">
         <legend>Capas</legend>
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={p.highContrast}
+            onChange={(e) => p.onHighContrastChange(e.target.checked)}
+          />
+          Basemap de alto contraste
+        </label>
+        <p className="hint">
+          Reemplaza el mapa base por fondo negro con fronteras blancas. Se
+          activa solo si tu sistema pide mas contraste.
+        </p>
         <label className="check-row">
           <input
             type="checkbox"

@@ -227,7 +227,7 @@ try {
     /Pausar/i.test((await page.locator('.btn-play').getAttribute('aria-label')) ?? ''))
 
   // ------------------------------------------------------ capa de coropleta
-  await page.locator('.check-row input').check()
+  await page.getByRole('checkbox', { name: /Densidad de poblacion/ }).check()
   await page.waitForTimeout(2500)
   // La asercion de render real (queryRenderedFeatures via el gancho de test):
   // una expresion invalida hace que MapLibre rechace la capa entera y el mapa
@@ -242,6 +242,25 @@ try {
   const readout = (await page.locator('.country-readout').innerText()).trim()
   check('la consulta por teclado da el valor en texto',
     /Per(u|ú).*26\s*hab\/km/.test(readout), readout)
+
+  // --------------------------------------------------------- alto contraste
+  await page.getByRole('checkbox', { name: /alto contraste/i }).check()
+  await page.waitForTimeout(1500)
+  check('alto contraste: basemap apagado, fondo y fronteras propias puestos',
+    await page.evaluate(() => {
+      const m = window.__wqgMap
+      return m.getLayoutProperty('bg', 'visibility') === 'none' &&
+        Boolean(m.getLayer('hc-background')) &&
+        m.queryRenderedFeatures({ layers: ['hc-countries-line'] }).length > 0
+    }))
+  await page.getByRole('checkbox', { name: /alto contraste/i }).uncheck()
+  await page.waitForTimeout(800)
+  check('alto contraste: apagarlo restaura el basemap',
+    await page.evaluate(() => {
+      const m = window.__wqgMap
+      return m.getLayoutProperty('bg', 'visibility') !== 'none' &&
+        !m.getLayer('hc-background') && !m.getLayer('hc-countries-line')
+    }))
 
   // ------------------------------------------------------------- clustering
   await page.locator('input[type="radio"]').first().check()  // todo el periodo

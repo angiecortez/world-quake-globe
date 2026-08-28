@@ -35,6 +35,8 @@ export interface GlobeMapProps {
   choropleth: boolean
   /** true = feed denso: los sismos se agrupan (ver addQuakeStack) */
   clustered: boolean
+  /** true = basemap reemplazado por fondo negro + fronteras propias */
+  highContrast: boolean
   onSelect: (id: string | null) => void
   onCountrySelect: (iso3: string | null) => void
   onVisibleChange: (ids: string[]) => void
@@ -49,6 +51,8 @@ export function GlobeMap(props: GlobeMapProps) {
   const builtClusteredRef = useRef(false)
   /** Throttle del setData en modo cluster (re-indexar 10k por frame seria brutal). */
   const clusterThrottleRef = useRef<{ timer?: number; last: number }>({ last: 0 })
+  /** Capas del basemap ocultadas por el modo de alto contraste. */
+  const hiddenBaseLayersRef = useRef<string[] | null>(null)
   // Los callbacks viven en refs para que el mapa se inicialice UNA vez.
   const cb = useRef(props)
   cb.current = props
@@ -111,6 +115,9 @@ export function GlobeMap(props: GlobeMapProps) {
 
       addQuakeStack(map, cb.current.data, cb.current.filter, cb.current.clustered)
       builtClusteredRef.current = cb.current.clustered
+      if (cb.current.highContrast) {
+        applyHighContrast(map, true, cb.current.countries, hiddenBaseLayersRef)
+      }
 
       readyRef.current = true
       applyFilter(map, cb.current.filter, cb.current.clustered)
@@ -211,7 +218,16 @@ export function GlobeMap(props: GlobeMapProps) {
     if (!map || !readyRef.current || !props.countries) return
     const src = map.getSource(COUNTRY_SOURCE)
     if (src && 'setData' in src) (src as GeoJSONSource).setData(props.countries)
+    const hc = map.getSource(HC_SOURCE)
+    if (hc && 'setData' in hc) (hc as GeoJSONSource).setData(props.countries)
   }, [props.countries])
+
+  // --- alto contraste -------------------------------------------------
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !readyRef.current) return
+    applyHighContrast(map, props.highContrast, props.countries, hiddenBaseLayersRef)
+  }, [props.highContrast, props.countries])
 
   useEffect(() => {
     const map = mapRef.current
@@ -428,6 +444,75 @@ function addQuakeStack(map: MlMap, data: QuakeCollection, filter: FilterState, c
       },
       paint: { 'text-color': '#e8f2ff' },
     })
+  }
+}
+
+export const HC_SOURCE = 'hc-countries'
+export const HC_LAYER_BG = 'hc-background'
+export const HC_LAYER_LINE = 'hc-countries-line'
+
+/**
+ * Modo de alto contraste: en vez de cambiar a otro estilo de teselas (lo que
+ * destruiria las capas propias y traeria OTRO fondo contra el que la rampa no
+ * fue validada), se apaga el basemap entero y se reemplaza por fondo negro +
+ * fronteras blancas desde las geometrias propias. El dato queda con el maximo
+ * contraste posible y las rampas validadas contra fondo oscuro solo mejoran.
+ * Reversible: las capas ocultadas se recuerdan y se restauran.
+ */
+function applyHighContrast(
+  map: MlMap,
+  on: boolean,
+  countries: CountryCollection | null,
+  hiddenRef: { current: string[] | null },
+) {
+  const APP_LAYERS = new Set<string>([
+    LAYER_CHORO_FILL, LAYER_CHORO_LINE, LAYER_GLOW, LAYER_PULSE, LAYER_MAIN,
+    LAYER_SELECTED, LAYER_CLUSTER, LAYER_CLUSTER_COUNT, HC_LAYER_BG, HC_LAYER_LINE,
+  ])
+
+  if (on) {
+    const firstId = map.getStyle().layers[0]?.id
+    if (!map.getLayer(HC_LAYER_BG)) {
+      map.addLayer(
+        { id: HC_LAYER_BG, type: 'background', paint: { 'background-color': '#000000' } },
+        firstId,
+      )
+    }
+    const hidden: string[] = hiddenRef.current ?? []
+    for (const layer of map.getStyle().layers) {
+      if (APP_LAYERS.has(layer.id)) continue
+      if (map.getLayoutProperty(layer.id, 'visibility') !== 'none') {
+        map.setLayoutProperty(layer.id, 'visibility', 'none')
+        hidden.push(layer.id)
+      }
+    }
+    hiddenRef.current = hidden
+    if (!map.getSource(HC_SOURCE)) {
+      map.addSource(HC_SOURCE, {
+        type: 'geojson',
+        data: countries ?? { type: 'FeatureCollection', features: [] },
+      })
+    }
+    if (!map.getLayer(HC_LAYER_LINE)) {
+      map.addLayer(
+        {
+          id: HC_LAYER_LINE,
+          type: 'line',
+          source: HC_SOURCE,
+          paint: { 'line-color': '#ffffff', 'line-width': 0.7, 'line-opacity': 0.85 },
+        },
+        // Encima de la coropleta (los fills lavarian las lineas) y debajo
+        // de los sismos.
+        map.getLayer(LAYER_GLOW) ? LAYER_GLOW : undefined,
+      )
+    }
+  } else {
+    for (const id of hiddenRef.current ?? []) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible')
+    }
+    hiddenRef.current = null
+    if (map.getLayer(HC_LAYER_LINE)) map.removeLayer(HC_LAYER_LINE)
+    if (map.getLayer(HC_LAYER_BG)) map.removeLayer(HC_LAYER_BG)
   }
 }
 
