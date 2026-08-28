@@ -7,7 +7,9 @@ export const FEEDS: FeedOption[] = [
   { id: 'm45_month', label: 'M4.5+ · ultimo mes', url: `${BASE}/4.5_month.geojson`, hint: 'ligero (~400 sismos)' },
   { id: 'm25_month', label: 'M2.5+ · ultimo mes', url: `${BASE}/2.5_month.geojson`, hint: 'equilibrado (~1.500)' },
   { id: 'all_week', label: 'Todos · ultima semana', url: `${BASE}/all_week.geojson`, hint: 'denso (~2.000)' },
-  { id: 'all_month', label: 'Todos · ultimo mes', url: `${BASE}/all_month.geojson`, hint: 'prueba de carga (~10.000)' },
+  // `cluster`: a ~10.000 features los circulos individuales se pisan hasta
+  // ser ilegibles; este feed se agrupa (ver GlobeMap para las implicancias).
+  { id: 'all_month', label: 'Todos · ultimo mes', url: `${BASE}/all_month.geojson`, hint: 'prueba de carga (~10.000)', cluster: true },
 ]
 
 interface RawFeature {

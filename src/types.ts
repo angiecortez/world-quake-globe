@@ -21,4 +21,6 @@ export interface FeedOption {
   label: string
   url: string
   hint: string
+  /** true = el feed es tan denso que se renderiza agrupado (clustering) */
+  cluster?: boolean
 }

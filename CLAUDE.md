@@ -203,7 +203,13 @@ no dispara el efecto porque React descarta el mismo valor).
    accesibilidad) cubriría ese flanco y se lee muy senior.
 5. **No es un repo todavía:** sin git, sin deploy, sin captura en el README. Un
    link vivo vale más que el código en una entrevista.
-6. **Sin clustering** para el feed completo (~10.000 features).
+6. ~~**Sin clustering**~~ **Hecho (28 ago 2026).** El feed `all_month` se
+   agrupa (`cluster: true`, radio 42, maxZoom 8). Decisiones: filtros por
+   `setData` filtrado con throttle de 250ms (la agregacion ignora los filtros
+   de capa: un cluster "filtrado" mentiria), clusters en neutral sin rampa de
+   profundidad, pulso apagado, click = zoom de expansion, y la tabla avisa que
+   el conjunto va agrupado. La pila de capas de sismos se re-arma al cambiar
+   de modo (el flag `cluster` de un GeoJSONSource es de construccion).
 
 Orden sugerido: (1) → (2) → (5) → (3).
 

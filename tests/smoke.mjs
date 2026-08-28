@@ -99,6 +99,27 @@ try {
   // Banco Mundial mockeado igual que el USGS; las geometrias de paises NO se
   // mockean: son un asset propio (public/data/countries.json) y el test debe
   // fallar si el precomputo lo rompio.
+  // Glifos para las etiquetas de conteo de los clusters: un PBF vacio valido
+  // (el estilo mockeado no tiene fuentes reales y el test no debe depender
+  // de ellas). Registrado despues del route generico para tener prioridad.
+  await page.route('**://tiles.openfreemap.org/fonts/**', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/x-protobuf', body: Buffer.alloc(0) }))
+  // El feed denso va con su propio fixture: 60 sismos apretados alrededor de
+  // Lima para que el clustering realmente forme grupos.
+  const denseFixture = {
+    type: 'FeatureCollection',
+    features: Array.from({ length: 60 }, (_, i) => ({
+      type: 'Feature',
+      id: `d${i}`,
+      geometry: {
+        type: 'Point',
+        coordinates: [-77 + (i % 8) * 0.4, -12 + Math.floor(i / 8) * 0.4, 20 + i],
+      },
+      properties: { mag: 2 + (i % 9) * 0.5, place: `Cerca de Lima ${i}`, time: now - i * H, url: '', tsunami: 0 },
+    })),
+  }
+  await page.route('**://earthquake.usgs.gov/**/all_month.geojson', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(denseFixture) }))
   await page.route('**://api.worldbank.org/**', (r) =>
     r.fulfill({
       status: 200,
@@ -221,6 +242,30 @@ try {
   const readout = (await page.locator('.country-readout').innerText()).trim()
   check('la consulta por teclado da el valor en texto',
     /Per(u|ú).*26\s*hab\/km/.test(readout), readout)
+
+  // ------------------------------------------------------------- clustering
+  await page.locator('input[type="radio"]').first().check()  // todo el periodo
+  await page.selectOption('#feed', 'all_month')
+  await page.waitForTimeout(2000)
+  // El mapa quedo desplazado por las interacciones previas: encuadra el
+  // fixture denso antes de preguntar que se renderiza.
+  await page.evaluate(() => window.__wqgMap.jumpTo({ center: [-75.5, -10.5], zoom: 3 }))
+  await page.waitForTimeout(1500)
+  check('el feed denso forma grupos (clusters renderizados)',
+    await page.evaluate(() =>
+      window.__wqgMap.queryRenderedFeatures({ layers: ['quakes-cluster'] }).length > 0))
+  check('la tabla avisa que el conjunto va agrupado',
+    /agrupado/.test(await page.locator('.table-caption').innerText()))
+  // La asercion de honestidad: la agregacion ocurre ANTES que los filtros de
+  // capa, asi que si el filtro fuera por setFilter los clusters seguirian
+  // mostrando sismos descartados. Subir la magnitud por encima del maximo
+  // del fixture debe vaciar clusters Y sismos.
+  await page.locator('#minmag').fill('7')
+  await page.waitForTimeout(1500)
+  check('los filtros atraviesan la agregacion (los clusters no mienten)',
+    await page.evaluate(() =>
+      window.__wqgMap.queryRenderedFeatures({ layers: ['quakes-cluster'] }).length === 0 &&
+      window.__wqgMap.queryRenderedFeatures({ layers: ['quakes-main'] }).length === 0))
 
   check('sin errores de consola tras todas las interacciones',
     consoleErrors.length === 0, consoleErrors[0])

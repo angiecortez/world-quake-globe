@@ -14,6 +14,8 @@ export interface QuakeTableProps {
   quakes: QuakeFeature[]
   selectedId: string | null
   onSelect: (id: string) => void
+  /** true = el feed activo se renderiza agrupado en el mapa */
+  clustered?: boolean
 }
 
 /**
@@ -22,7 +24,7 @@ export interface QuakeTableProps {
  * un lector de pantalla (WCAG 1.1.1) y da una ruta de teclado a cada
  * dato sin depender de la interaccion con el mapa (2.1.1).
  */
-export function QuakeTable({ quakes, selectedId, onSelect }: QuakeTableProps) {
+export function QuakeTable({ quakes, selectedId, onSelect, clustered = false }: QuakeTableProps) {
   const rows = quakes.slice(0, MAX_ROWS)
 
   return (
@@ -35,6 +37,7 @@ export function QuakeTable({ quakes, selectedId, onSelect }: QuakeTableProps) {
           ? 'Ningun sismo coincide con los filtros en la vista actual.'
           : `${quakes.length} sismos, ordenados del mas reciente al mas antiguo.`}
         {quakes.length > MAX_ROWS && ` Se listan los primeros ${MAX_ROWS}; acerca el mapa o sube la magnitud minima para reducir la lista.`}
+        {clustered && ' Este conjunto se muestra agrupado: la lista cubre los sismos individuales visibles, y los grupos se desglosan al acercar el mapa.'}
       </p>
 
       {rows.length > 0 && (

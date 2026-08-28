@@ -62,6 +62,16 @@ export const LAYER_GLOW = 'quakes-glow'
 export const LAYER_MAIN = 'quakes-main'
 export const LAYER_PULSE = 'quakes-pulse'
 export const LAYER_SELECTED = 'quakes-selected'
+export const LAYER_CLUSTER = 'quakes-cluster'
+export const LAYER_CLUSTER_COUNT = 'quakes-cluster-count'
+
+/** Los clusters agregan sismos de profundidades distintas, asi que NO pueden
+ *  usar la rampa de profundidad: seria inventar un dato. Van en un neutral
+ *  con el conteo encima; tamano = cantidad. */
+export const CLUSTER_COLOR = '#41567a'
+export const clusterRadiusExpr: ExpressionSpecification = [
+  'step', ['get', 'point_count'], 12, 25, 16, 100, 22, 500, 30,
+] as ExpressionSpecification
 
 export interface FilterState {
   minMag: number
@@ -77,6 +87,27 @@ export function buildFilter({ minMag, playhead, windowMs }: FilterState): Filter
     clauses.push(['>=', ['get', 'time'], playhead - windowMs])
   }
   return clauses as unknown as FilterSpecification
+}
+
+/**
+ * En modo cluster los filtros NO pueden ir por `setFilter`: la agregacion
+ * ocurre en el source (supercluster) ANTES de los filtros de capa, asi que
+ * un cluster mostraria sismos que el filtro ya descarto — un mapa que
+ * miente. La alternativa honesta es filtrar en memoria y re-indexar via
+ * `setData` (con throttle; ~10k features se re-indexan en decenas de ms).
+ */
+export function filterFeatures<T extends { properties: { mag: number; time: number } }>(
+  features: T[],
+  { minMag, playhead, windowMs }: FilterState,
+): T[] {
+  return features.filter((f) => {
+    if (f.properties.mag < minMag) return false
+    if (playhead !== null) {
+      if (f.properties.time > playhead) return false
+      if (f.properties.time < playhead - windowMs) return false
+    }
+    return true
+  })
 }
 
 /** El pulso solo marca lo que acaba de entrar a la ventana: el "borde de ataque". */

@@ -231,6 +231,7 @@ export default function App() {
             focusRequest={focusRequest}
             countries={countries}
             choropleth={choropleth}
+            clustered={!!feed.cluster}
             onSelect={handleMapSelect}
             onCountrySelect={setCountryQuery}
             onVisibleChange={setVisibleIds}
@@ -265,12 +266,12 @@ export default function App() {
             countries={countries}
             countryQuery={countryQuery} onCountryQueryChange={setCountryQuery}
           />
-          <Legend choropleth={choropleth && densityStatus === 'ready'} />
+          <Legend choropleth={choropleth && densityStatus === 'ready'} clustered={!!feed.cluster} />
         </aside>
       </main>
 
       <section id="tabla" className="table-section" tabIndex={-1}>
-        <QuakeTable quakes={visibleQuakes} selectedId={selectedId} onSelect={handleTableSelect} />
+        <QuakeTable quakes={visibleQuakes} selectedId={selectedId} onSelect={handleTableSelect} clustered={!!feed.cluster} />
       </section>
 
       {/* Region viva. El anuncio va con debounce a proposito: sin el, girar el

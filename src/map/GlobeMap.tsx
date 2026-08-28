@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { Map as MlMap, NavigationControl, setWorkerUrl, type GeoJSONSource, type MapMouseEvent } from 'maplibre-gl'
+import { Map as MlMap, NavigationControl, setWorkerUrl, type FilterSpecification, type GeoJSONSource, type MapMouseEvent } from 'maplibre-gl'
+import type { Point } from 'geojson'
 // MapLibre v6 resuelve la URL de su worker en runtime, algo que ningun bundler
 // puede detectar estaticamente. Sin esto el worker da 404 y el GeoJSONSource
 // nunca llega a parsear: el mapa se ve, pero no aparece ni un sismo.
@@ -9,9 +10,10 @@ setWorkerUrl(maplibreWorkerUrl)
 import type { QuakeCollection } from '../types'
 import type { CountryCollection } from '../data/countries'
 import {
+  CLUSTER_COLOR, LAYER_CLUSTER, LAYER_CLUSTER_COUNT,
   LAYER_GLOW, LAYER_MAIN, LAYER_PULSE, LAYER_SELECTED, SOURCE_ID,
-  buildFilter, buildPulseFilter, circleRadius, depthColorExpr,
-  type FilterState,
+  buildFilter, buildPulseFilter, circleRadius, clusterRadiusExpr, depthColorExpr,
+  filterFeatures, type FilterState,
 } from './layers'
 import { COUNTRY_SOURCE, LAYER_CHORO_FILL, LAYER_CHORO_LINE, densityColorExpr } from './choropleth'
 
@@ -31,6 +33,8 @@ export interface GlobeMapProps {
   /** null = coropleta apagada o sin datos todavia */
   countries: CountryCollection | null
   choropleth: boolean
+  /** true = feed denso: los sismos se agrupan (ver addQuakeStack) */
+  clustered: boolean
   onSelect: (id: string | null) => void
   onCountrySelect: (iso3: string | null) => void
   onVisibleChange: (ids: string[]) => void
@@ -41,6 +45,10 @@ export function GlobeMap(props: GlobeMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MlMap | null>(null)
   const readyRef = useRef(false)
+  /** Con que modo (agrupado o no) se construyo la pila de capas actual. */
+  const builtClusteredRef = useRef(false)
+  /** Throttle del setData en modo cluster (re-indexar 10k por frame seria brutal). */
+  const clusterThrottleRef = useRef<{ timer?: number; last: number }>({ last: 0 })
   // Los callbacks viven en refs para que el mapa se inicialice UNA vez.
   const cb = useRef(props)
   cb.current = props
@@ -101,70 +109,11 @@ export function GlobeMap(props: GlobeMapProps) {
         paint: { 'line-color': 'rgba(8,11,16,0.8)', 'line-width': 0.6 },
       })
 
-      map.addSource(SOURCE_ID, {
-        type: 'geojson',
-        data: cb.current.data,
-        promoteId: 'id',
-      })
-
-      // Halo difuso: da la sensacion de energia sin competir con el dato.
-      map.addLayer({
-        id: LAYER_GLOW,
-        type: 'circle',
-        source: SOURCE_ID,
-        paint: {
-          'circle-radius': circleRadius(2.4),
-          'circle-color': depthColorExpr,
-          'circle-opacity': 0.16,
-          'circle-blur': 1,
-        },
-      })
-
-      // Anillo que late sobre los sismos que acaban de entrar a la ventana.
-      map.addLayer({
-        id: LAYER_PULSE,
-        type: 'circle',
-        source: SOURCE_ID,
-        paint: {
-          'circle-radius': circleRadius(),
-          'circle-color': 'rgba(0,0,0,0)',
-          'circle-stroke-color': '#e8f2ff',
-          'circle-stroke-width': 1.5,
-          'circle-stroke-opacity': 0,
-        },
-      })
-
-      // Marca principal. Tamano = magnitud, color = profundidad.
-      // El anillo oscuro de 1px la despega del basemap (regla del ring de superficie).
-      map.addLayer({
-        id: LAYER_MAIN,
-        type: 'circle',
-        source: SOURCE_ID,
-        paint: {
-          'circle-radius': circleRadius(),
-          'circle-color': depthColorExpr,
-          'circle-opacity': 0.9,
-          'circle-stroke-color': 'rgba(8,11,16,0.9)',
-          'circle-stroke-width': 1,
-        },
-      })
-
-      map.addLayer({
-        id: LAYER_SELECTED,
-        type: 'circle',
-        source: SOURCE_ID,
-        filter: ['==', ['get', 'id'], '__none__'],
-        paint: {
-          'circle-radius': circleRadius(1.5),
-          'circle-color': 'rgba(0,0,0,0)',
-          'circle-stroke-color': '#ffffff',
-          'circle-stroke-width': 2.5,
-        },
-      })
+      addQuakeStack(map, cb.current.data, cb.current.filter, cb.current.clustered)
+      builtClusteredRef.current = cb.current.clustered
 
       readyRef.current = true
-      applyData(map, cb.current.data)
-      applyFilter(map, cb.current.filter)
+      applyFilter(map, cb.current.filter, cb.current.clustered)
       reportVisible(map, cb.current.onVisibleChange)
     })
 
@@ -172,14 +121,27 @@ export function GlobeMap(props: GlobeMapProps) {
     // renderizan (queryRenderedFeatures), no solo que el DOM existe.
     ;(window as unknown as { __wqgMap?: MlMap }).__wqgMap = map
 
-    map.on('click', LAYER_MAIN, (e: MapMouseEvent & { features?: Array<{ properties?: Record<string, unknown> }> }) => {
-      const f = e.features?.[0]
-      const id = f?.properties?.id
-      if (typeof id === 'string') cb.current.onSelect(id)
-    })
+    // Un solo handler de click con prioridad explicita:
+    // sismo individual > cluster > pais de la coropleta > vacio.
     map.on('click', (e: MapMouseEvent) => {
-      const hits = map.queryRenderedFeatures(e.point, { layers: [LAYER_MAIN] })
-      if (hits.length > 0) return
+      if (map.getLayer(LAYER_MAIN)) {
+        const hits = map.queryRenderedFeatures(e.point, { layers: [LAYER_MAIN] })
+        const id = hits[0]?.properties?.id
+        if (typeof id === 'string') { cb.current.onSelect(id); return }
+      }
+      if (map.getLayer(LAYER_CLUSTER)) {
+        const cl = map.queryRenderedFeatures(e.point, { layers: [LAYER_CLUSTER] })[0]
+        if (cl) {
+          const src = map.getSource(SOURCE_ID) as GeoJSONSource
+          const clusterId = (cl.properties as { cluster_id: number }).cluster_id
+          void src.getClusterExpansionZoom(clusterId).then((zoom) => {
+            const center = (cl.geometry as Point).coordinates as [number, number]
+            if (cb.current.reducedMotion) map.jumpTo({ center, zoom })
+            else map.easeTo({ center, zoom, duration: 600 })
+          })
+          return
+        }
+      }
       cb.current.onSelect(null)
       // Sin sismo bajo el click: si la coropleta esta activa, consulta el pais.
       if (cb.current.choropleth && map.getLayer(LAYER_CHORO_FILL)) {
@@ -188,8 +150,11 @@ export function GlobeMap(props: GlobeMapProps) {
         cb.current.onCountrySelect(typeof iso3 === 'string' ? iso3 : null)
       }
     })
-    map.on('mouseenter', LAYER_MAIN, () => { map.getCanvas().style.cursor = 'pointer' })
-    map.on('mouseleave', LAYER_MAIN, () => { map.getCanvas().style.cursor = '' })
+    map.on('mousemove', (e: MapMouseEvent) => {
+      const ids = [LAYER_MAIN, LAYER_CLUSTER].filter((id) => map.getLayer(id))
+      const hover = ids.length > 0 && map.queryRenderedFeatures(e.point, { layers: ids }).length > 0
+      map.getCanvas().style.cursor = hover ? 'pointer' : ''
+    })
 
     const interact = () => cb.current.onUserInteract()
     map.on('dragstart', interact)
@@ -220,13 +185,25 @@ export function GlobeMap(props: GlobeMapProps) {
     }
   }, [])
 
-  // --- datos ----------------------------------------------------------
+  // --- datos (y cambio de modo agrupado/individual) --------------------
+  // El flag `cluster` de un GeoJSONSource es de construccion: cambiar de
+  // modo exige tirar la pila de capas de sismos y re-armarla. La coropleta
+  // no se toca (esta debajo y las capas nuevas se agregan encima).
   useEffect(() => {
     const map = mapRef.current
     if (!map || !readyRef.current) return
-    applyData(map, props.data)
+    if (builtClusteredRef.current !== props.clustered) {
+      removeQuakeStack(map)
+      addQuakeStack(map, props.data, cb.current.filter, props.clustered)
+      builtClusteredRef.current = props.clustered
+      applyFilter(map, cb.current.filter, props.clustered)
+    } else {
+      applyData(map, props.clustered
+        ? { ...props.data, features: filterFeatures(props.data.features, cb.current.filter) }
+        : props.data)
+    }
     reportVisible(map, cb.current.onVisibleChange)
-  }, [props.data])
+  }, [props.data, props.clustered])
 
   // --- coropleta ------------------------------------------------------
   useEffect(() => {
@@ -246,12 +223,27 @@ export function GlobeMap(props: GlobeMapProps) {
   }, [props.choropleth])
 
   // --- filtros --------------------------------------------------------
+  // Modo normal: setFilter (gratis). Modo cluster: setData filtrado con
+  // throttle de 250ms — ver el comentario en filterFeatures.
   useEffect(() => {
     const map = mapRef.current
     if (!map || !readyRef.current) return
-    applyFilter(map, props.filter)
+    if (props.clustered) {
+      const t = clusterThrottleRef.current
+      const run = () => {
+        t.last = performance.now()
+        const m = mapRef.current
+        if (!m || !readyRef.current) return
+        applyData(m, { ...cb.current.data, features: filterFeatures(cb.current.data.features, cb.current.filter) })
+        reportVisible(m, cb.current.onVisibleChange)
+      }
+      window.clearTimeout(t.timer)
+      t.timer = window.setTimeout(run, Math.max(0, 250 - (performance.now() - t.last)))
+      return
+    }
+    applyFilter(map, props.filter, false)
     reportVisible(map, cb.current.onVisibleChange)
-  }, [props.filter])
+  }, [props.filter, props.clustered])
 
   // --- seleccion ------------------------------------------------------
   useEffect(() => {
@@ -328,12 +320,131 @@ export function GlobeMap(props: GlobeMapProps) {
   )
 }
 
+/**
+ * Arma la pila de capas de sismos en uno de dos modos:
+ *
+ * - **Individual**: cada sismo es un circulo (tamano=magnitud,
+ *   color=profundidad) y los filtros van por `setFilter`, gratis.
+ * - **Agrupado** (feeds densos): el source clusteriza. Tres implicancias
+ *   deliberadas: (1) los filtros van por `setData` filtrado, porque la
+ *   agregacion ocurre ANTES que los filtros de capa y un cluster mostraria
+ *   sismos ya descartados; (2) los clusters NO usan la rampa de profundidad
+ *   — agregan profundidades distintas y pintarlos con una seria inventar un
+ *   dato: van en neutral con el conteo encima; (3) el pulso se apaga, marca
+ *   recencia individual y no tiene sentido sobre un agregado.
+ */
+function addQuakeStack(map: MlMap, data: QuakeCollection, filter: FilterState, clustered: boolean) {
+  const noCluster = ['!', ['has', 'point_count']] as unknown as FilterSpecification
+
+  map.addSource(SOURCE_ID, {
+    type: 'geojson',
+    data: clustered ? { ...data, features: filterFeatures(data.features, filter) } : data,
+    promoteId: 'id',
+    ...(clustered ? { cluster: true, clusterRadius: 42, clusterMaxZoom: 8 } : {}),
+  })
+
+  // Halo difuso: da la sensacion de energia sin competir con el dato.
+  map.addLayer({
+    id: LAYER_GLOW,
+    type: 'circle',
+    source: SOURCE_ID,
+    ...(clustered ? { filter: noCluster } : {}),
+    paint: {
+      'circle-radius': circleRadius(2.4),
+      'circle-color': depthColorExpr,
+      'circle-opacity': 0.16,
+      'circle-blur': 1,
+    },
+  })
+
+  // Anillo que late sobre los sismos que acaban de entrar a la ventana.
+  map.addLayer({
+    id: LAYER_PULSE,
+    type: 'circle',
+    source: SOURCE_ID,
+    layout: { visibility: clustered ? 'none' : 'visible' },
+    paint: {
+      'circle-radius': circleRadius(),
+      'circle-color': 'rgba(0,0,0,0)',
+      'circle-stroke-color': '#e8f2ff',
+      'circle-stroke-width': 1.5,
+      'circle-stroke-opacity': 0,
+    },
+  })
+
+  // Marca principal. Tamano = magnitud, color = profundidad.
+  // El anillo oscuro de 1px la despega del basemap (regla del ring de superficie).
+  map.addLayer({
+    id: LAYER_MAIN,
+    type: 'circle',
+    source: SOURCE_ID,
+    ...(clustered ? { filter: noCluster } : {}),
+    paint: {
+      'circle-radius': circleRadius(),
+      'circle-color': depthColorExpr,
+      'circle-opacity': 0.9,
+      'circle-stroke-color': 'rgba(8,11,16,0.9)',
+      'circle-stroke-width': 1,
+    },
+  })
+
+  map.addLayer({
+    id: LAYER_SELECTED,
+    type: 'circle',
+    source: SOURCE_ID,
+    filter: ['==', ['get', 'id'], '__none__'],
+    paint: {
+      'circle-radius': circleRadius(1.5),
+      'circle-color': 'rgba(0,0,0,0)',
+      'circle-stroke-color': '#ffffff',
+      'circle-stroke-width': 2.5,
+    },
+  })
+
+  if (clustered) {
+    map.addLayer({
+      id: LAYER_CLUSTER,
+      type: 'circle',
+      source: SOURCE_ID,
+      filter: ['has', 'point_count'],
+      paint: {
+        'circle-color': CLUSTER_COLOR,
+        'circle-radius': clusterRadiusExpr,
+        'circle-opacity': 0.85,
+        'circle-stroke-color': 'rgba(8,11,16,0.9)',
+        'circle-stroke-width': 1.5,
+      },
+    })
+    map.addLayer({
+      id: LAYER_CLUSTER_COUNT,
+      type: 'symbol',
+      source: SOURCE_ID,
+      filter: ['has', 'point_count'],
+      layout: {
+        'text-field': ['get', 'point_count_abbreviated'],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': 11,
+        'text-allow-overlap': true,
+      },
+      paint: { 'text-color': '#e8f2ff' },
+    })
+  }
+}
+
+function removeQuakeStack(map: MlMap) {
+  for (const id of [LAYER_CLUSTER_COUNT, LAYER_CLUSTER, LAYER_SELECTED, LAYER_MAIN, LAYER_PULSE, LAYER_GLOW]) {
+    if (map.getLayer(id)) map.removeLayer(id)
+  }
+  if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID)
+}
+
 function applyData(map: MlMap, data: QuakeCollection) {
   const src = map.getSource(SOURCE_ID)
   if (src && 'setData' in src) (src as GeoJSONSource).setData(data)
 }
 
-function applyFilter(map: MlMap, filter: FilterState) {
+function applyFilter(map: MlMap, filter: FilterState, clustered: boolean) {
+  if (clustered) return // los filtros ya viajaron dentro del setData
   if (map.getLayer(LAYER_MAIN)) {
     const f = buildFilter(filter)
     map.setFilter(LAYER_MAIN, f)

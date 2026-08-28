@@ -7,7 +7,7 @@ const MAG_SAMPLES = [3, 5, 7]
  *  Ninguna de las dos variables depende solo del color (WCAG 1.4.1).
  *  La coropleta usa el tono complementario (ambar) para no pisar el canal
  *  de color de los sismos. */
-export function Legend({ choropleth = false }: { choropleth?: boolean }) {
+export function Legend({ choropleth = false, clustered = false }: { choropleth?: boolean; clustered?: boolean }) {
   return (
     <section className="legend" aria-labelledby="legend-title">
       <h2 id="legend-title" className="panel-title">Leyenda</h2>
@@ -35,6 +35,22 @@ export function Legend({ choropleth = false }: { choropleth?: boolean }) {
           </li>
         ))}
       </ul>
+
+      {clustered && (
+        <>
+          <h3 className="legend-sub" id="legend-cluster">Grupos</h3>
+          <ul className="legend-depths" aria-labelledby="legend-cluster">
+            <li>
+              <span className="legend-swatch legend-swatch-cluster" aria-hidden="true" />
+              <span className="legend-label">circulo gris con numero = varios sismos</span>
+            </li>
+          </ul>
+          <p className="legend-note">
+            Los grupos no codifican profundidad (mezclan varias). Activa un grupo
+            o acerca el mapa para desglosarlo.
+          </p>
+        </>
+      )}
 
       {choropleth && (
         <>

@@ -105,8 +105,13 @@ filtrar ni pintar por profundidad.
   Es el numero a comparar contra el ArcGIS Maps SDK si la decision de stack
   sigue abierta.
 - Hasta ~2.000 features el `GeoJSONSource` plano rinde bien. El feed
-  `all_month` (~10.000) esta incluido justamente como prueba de carga: a partir
-  de ahi corresponde clustering (`cluster: true`) o pasar a vector tiles.
+  `all_month` (~10.000) **se renderiza agrupado** (`cluster: true`), con tres
+  decisiones deliberadas: los filtros van por `setData` filtrado en memoria
+  (la agregacion ocurre ANTES que los filtros de capa — un cluster filtrado
+  por `setFilter` mostraria sismos ya descartados), los clusters van en
+  neutral sin la rampa de profundidad (agregan profundidades distintas;
+  pintarlos con una seria inventar un dato), y el pulso se apaga (marca
+  recencia individual). Click en un grupo = zoom de expansion.
 - El filtrado temporal se hace con `setFilter` sobre el source ya cargado, no
   re-fetcheando: la reproduccion no toca la red.
 
@@ -135,7 +140,7 @@ salieron de correr la app en un navegador headless, no del typecheck.
 ## Verificacion
 
 `tests/smoke.mjs` mockea el feed del USGS y el basemap (el test no debe fallar
-porque un tercero este lento) y comprueba 23 cosas en un navegador real:
+porque un tercero este lento) y comprueba 26 cosas en un navegador real:
 
 - que la app monte sin errores de pagina ni de consola,
 - que **las capas efectivamente rendericen sismos** — la asercion que caza el
@@ -157,6 +162,9 @@ porque un tercero este lento) y comprueba 23 cosas en un navegador real:
 - que la coropleta **renderice paises de verdad** (`queryRenderedFeatures`,
   la misma clase de asercion que caza capas rechazadas), que la leyenda sume
   la rampa de densidad, y que la consulta por pais de el valor en texto,
+- que el feed denso forme grupos de verdad y que **los filtros atraviesen la
+  agregacion** — subir la magnitud minima por encima del maximo debe vaciar
+  clusters y sismos por igual (la asercion de que los clusters no mienten),
 - y que no haya errores de consola despues de todas las interacciones.
 
 El Banco Mundial va mockeado igual que el USGS; las geometrias **no**: son un
@@ -174,4 +182,3 @@ VoiceOver.
 - Capa de calidad del aire (Open-Meteo, sin key) y OpenAQ detras de una edge function.
 - Prueba manual con lector de pantalla real (VoiceOver/NVDA) y un modo de
   alto contraste del basemap.
-- Clustering para el feed completo.
