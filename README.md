@@ -102,8 +102,11 @@ filtrar ni pintar por profundidad.
 ## Notas de rendimiento
 
 - El bundle de produccion pesa ~1.15 MB (~313 KB gzip); casi todo es MapLibre.
-  Es el numero a comparar contra el ArcGIS Maps SDK si la decision de stack
-  sigue abierta.
+  La comparacion contra ArcGIS Maps SDK ya no es teorica: hay un POC real en
+  `poc/arcgis/` y los numeros medidos (455 KB gzip / 3 requests vs ~1 MB gzip /
+  ~250 requests) estan en el
+  [ADR-001](docs/adr-001-stack-de-mapa.md), junto con la frontera explicita de
+  cuando la decision se invertiria.
 - Hasta ~2.000 features el `GeoJSONSource` plano rinde bien. El feed
   `all_month` (~10.000) **se renderiza agrupado** (`cluster: true`), con tres
   decisiones deliberadas: los filtros van por `setData` filtrado en memoria

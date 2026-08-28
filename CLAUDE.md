@@ -136,7 +136,7 @@ orquestación), `src/ui/QuakeTable.tsx` (el gemelo accesible),
 |---|---|
 | Global, no Perú | Hay mucha más data abierta sin API key a nivel mundial, y quita el aire de "proyecto local". |
 | USGS como fuente principal | Ya viene en GeoJSON, con CORS abierto y sin key: entra directo al `GeoJSONSource`. Cada feature trae `time` y `mag`, así que el time slider y el filtro son expresiones, no refetch. |
-| MapLibre, no ArcGIS | Sin costo de licencia y con globo nativo desde v5. **Nota:** esto deja el flanco de Esri descubierto; ver pendientes. |
+| MapLibre, no ArcGIS | Sin costo de licencia y con globo nativo desde v5. La decision esta defendida con numeros propios en `docs/adr-001-stack-de-mapa.md` (POC real en `poc/arcgis/`). |
 | Profundidad = rampa secuencial de un solo tono | La profundidad es una magnitud continua, no una categoría. Nada de arcoíris. Validada contra el fondo oscuro real: luminosidad monótona, gaps ≥0.06, extremo más oscuro a 3.36:1. |
 | Magnitud = tamaño | Dos variables por canales distintos, así nada depende solo del color (WCAG 1.4.1). |
 | Rotación apagable y `prefers-reduced-motion` | WCAG 2.2.2: toda animación que arranca sola necesita cómo detenerse. |
@@ -198,9 +198,12 @@ no dispara el efecto porque React descarta el mismo valor).
    rampa ambar validada (`scripts/validate-ramps.mjs`), leyenda propia y via
    de teclado al dato (select de paises + `role="status"`). Carga perezosa:
    quien no la enciende no paga ni un byte.
-4. **Cero ArcGIS.** Si su stack resulta ser Esri, no hay nada que mostrar. El
-   POC comparativo ArcGIS SDK vs MapLibre (bundle size, costo, DX,
-   accesibilidad) cubriría ese flanco y se lee muy senior.
+4. ~~**Cero ArcGIS.**~~ **Hecho (28 ago 2026).** POC real en `poc/arcgis/`
+   (SceneView + GeoJSONLayer del USGS, ArcGIS Maps SDK 4.34) y ADR comparativo
+   con numeros medidos en `docs/adr-001-stack-de-mapa.md`: 455 KB gzip / 3
+   requests (MapLibre) vs ~1 MB gzip / ~250 requests (ArcGIS), build de 19 MB
+   / 1.107 chunks, y la frontera explicita de cuando ArcGIS ganaria (ya en
+   ecosistema Esri, 3D real, soporte comercial).
 5. **No es un repo todavía:** sin git, sin deploy, sin captura en el README. Un
    link vivo vale más que el código en una entrevista.
 6. ~~**Sin clustering**~~ **Hecho (28 ago 2026).** El feed `all_month` se
