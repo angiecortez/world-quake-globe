@@ -3,6 +3,13 @@
 Visor GIS de sismicidad global sobre un globo 3D, construido con **MapLibre GL JS**
 y datos abiertos del **USGS**. Sin API keys, sin backend, sin dependencias de pago.
 
+![World Quake Globe: globo 3D oscuro centrado en Sudamerica con los sismos del
+mes como circulos azules sobre los Andes, controles de filtro y linea de tiempo,
+leyenda de magnitud y profundidad, y el inicio de la tabla accesible de
+sismos](docs/screenshot.png)
+
+*La captura se regenera con `node tests/capture.mjs` (requiere `npm run build` previo).*
+
 El proyecto existe para demostrar tres cosas a la vez:
 
 1. manejo de *map layers*, interactividad y visualizacion de datos geoespaciales,
