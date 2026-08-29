@@ -174,7 +174,10 @@ input[type='range']:disabled { opacity: 0.4; }
 .table-section { border-top: 1px solid var(--hairline); background: var(--surface-1); padding: 16px 20px 32px; }
 .table-caption { margin: 0 0 10px; font-size: 0.85rem; color: var(--ink-secondary); }
 .table-scroll { max-height: 320px; overflow: auto; border: 1px solid var(--hairline); border-radius: var(--radius); }
-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+/* min-width: en pantallas angostas la tabla scrollea horizontal dentro de
+   .table-scroll en vez de partir cada fecha en cinco lineas (las tablas de
+   datos son la excepcion prevista por WCAG 1.4.10 Reflow). */
+table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 0.85rem; }
 thead th {
   position: sticky; top: 0; background: var(--surface-2); text-align: left;
   padding: 10px 12px; border-bottom: 1px solid var(--hairline); font-size: 0.75rem;
@@ -182,7 +185,8 @@ thead th {
 }
 tbody th, tbody td { padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.06); text-align: left; font-weight: 400; }
 tbody tr.is-selected { background: rgba(57, 135, 229, 0.18); }
-.num { font-variant-numeric: tabular-nums; color: var(--ink-secondary); }
+.num { font-variant-numeric: tabular-nums; color: var(--ink-secondary); white-space: nowrap; }
+tbody tr:hover { background: rgba(255, 255, 255, 0.05); }
 .row-btn {
   display: inline-flex; align-items: center; gap: 8px; min-height: 24px;
   background: none; border: 0; color: var(--ink-primary); font: inherit;
