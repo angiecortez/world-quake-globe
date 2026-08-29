@@ -117,6 +117,22 @@ no puede prometer.
   monotona, gaps >= 0.05, contraste sobre la superficie >= 3:1), que sale con
   codigo != 0 si fallan: apto para CI.
 
+## Detalles de experiencia
+
+- **URL compartible**: el feed, la vista, las capas y la magnitud minima viven
+  en el hash (`#feed=all_month&view=satellite&capas=placas`). Se escribe con
+  `replaceState` (sin ensuciar el historial) y solo cuando difiere del default.
+- **Tooltip** al pasar el puntero por un sismo o un grupo — azucar de
+  exploracion; la via formal al dato sigue siendo la tabla (por eso va
+  `aria-hidden`).
+- **Chip de conteo** visible sobre el mapa: la version para todos de lo que la
+  region `aria-live` anuncia al lector de pantalla.
+- En pantallas angostas el detalle es un **bottom sheet** y la tabla scrollea
+  horizontal sin partir fechas.
+- Titulos en **Space Grotesk** (OFL, auto-hosteada, 22 KB); el cuerpo sigue en
+  `system-ui`.
+- Metadatos Open Graph con captura propia: el link se ve bien al compartirlo.
+
 ## Decisiones de accesibilidad
 
 | Criterio WCAG 2.1 | Como se resuelve aqui |
@@ -179,7 +195,7 @@ salieron de correr la app en un navegador headless, no del typecheck.
 ## Verificacion
 
 `tests/smoke.mjs` mockea el feed del USGS y el basemap (el test no debe fallar
-porque un tercero este lento) y comprueba 31 cosas en un navegador real:
+porque un tercero este lento) y comprueba 36 cosas en un navegador real:
 
 - que la app monte sin errores de pagina ni de consola,
 - que **las capas efectivamente rendericen sismos** — la asercion que caza el
@@ -209,6 +225,10 @@ porque un tercero este lento) y comprueba 31 cosas en un navegador real:
 - que el feed denso forme grupos de verdad y que **los filtros atraviesen la
   agregacion** — subir la magnitud minima por encima del maximo debe vaciar
   clusters y sismos por igual (la asercion de que los clusters no mienten),
+- que el chip de conteo visible coincida con la tabla, que el tooltip
+  aparezca al pasar el puntero por un sismo, que el estado (feed, vista,
+  capas, magnitud) viva en el hash de la URL y que **abrir un link
+  compartido restaure ese estado**,
 - y que no haya errores de consola despues de todas las interacciones.
 
 El Banco Mundial va mockeado igual que el USGS; las geometrias **no**: son un

@@ -59,6 +59,8 @@ export function Controls(p: ControlsProps) {
     <section className="controls" aria-labelledby="controls-title">
       <h2 id="controls-title" className="panel-title">Controles</h2>
 
+      <div className="control-group">
+      <h3 className="group-title">Datos</h3>
       <div className="field">
         <label htmlFor="feed">Conjunto de datos</label>
         <select id="feed" value={p.feedId} onChange={(e) => p.onFeedChange(e.target.value)}>
@@ -68,6 +70,10 @@ export function Controls(p: ControlsProps) {
         </select>
       </div>
 
+      </div>
+
+      <div className="control-group">
+      <h3 className="group-title">Vista y capas</h3>
       <div className="field">
         <label htmlFor="basemap">Vista del planeta</label>
         <select
@@ -145,6 +151,10 @@ export function Controls(p: ControlsProps) {
         )}
       </fieldset>
 
+      </div>
+
+      <div className="control-group">
+      <h3 className="group-title">Tiempo y filtros</h3>
       <div className="field">
         <label htmlFor="minmag">
           Magnitud minima: <strong>{p.minMag.toFixed(1)}</strong>
@@ -208,6 +218,9 @@ export function Controls(p: ControlsProps) {
         <p className="playhead-readout" aria-hidden="true">{formatDateTime(p.playhead)}</p>
       </div>
 
+      </div>
+
+      <div className="control-group">
       <div className="field">
         <button type="button" className="btn btn-wide" onClick={p.onToggleSpin}
           disabled={p.reducedMotion} aria-pressed={p.spin}>
@@ -216,6 +229,7 @@ export function Controls(p: ControlsProps) {
         {p.reducedMotion && (
           <p className="hint">Movimiento reducido activo en tu sistema: las animaciones estan apagadas.</p>
         )}
+      </div>
       </div>
     </section>
   )

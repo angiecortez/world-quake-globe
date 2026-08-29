@@ -18,23 +18,43 @@ const EMPTY: QuakeCollection = { type: 'FeatureCollection', features: [] }
 /** Cuanto tiempo del dataset avanza por segundo de reproduccion. */
 const PLAY_MS_PER_SECOND = 1000 * 60 * 60 * 18
 
+/** Estado compartible en el hash de la URL (#feed=...&view=...&capas=...).
+ *  Solo lo que difiere del default, para que la URL limpia siga limpia. */
+function readHash() {
+  const p = new URLSearchParams(window.location.hash.slice(1))
+  return {
+    feed: p.get('feed'),
+    view: p.get('view'),
+    mag: p.get('mag'),
+    capas: (p.get('capas') ?? '').split(',').filter(Boolean),
+  }
+}
+
 export default function App() {
   const reducedMotion = useReducedMotion()
+  const boot = useRef(readHash()).current
 
   // --- vista del basemap ------------------------------------------------
   // El sistema puede pedir mas contraste (prefers-contrast) y el usuario
   // puede elegir la vista a mano; la eleccion manual manda una vez tocada.
   const systemContrast = useMediaQuery('(prefers-contrast: more)')
-  const [basemapChoice, setBasemapChoice] = useState<BasemapMode | null>(null)
+  const [basemapChoice, setBasemapChoice] = useState<BasemapMode | null>(
+    () => (['dark', 'satellite', 'contrast'] as const).find((v) => v === boot.view) ?? null,
+  )
   const basemap: BasemapMode = basemapChoice ?? (systemContrast ? 'contrast' : 'dark')
 
-  const [feedId, setFeedId] = useState(FEEDS[0].id)
+  const [feedId, setFeedId] = useState(
+    () => (FEEDS.some((f) => f.id === boot.feed) ? boot.feed! : FEEDS[0].id),
+  )
   const [data, setData] = useState<QuakeCollection>(EMPTY)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [errorMsg, setErrorMsg] = useState('')
   const [reloadNonce, setReloadNonce] = useState(0)
 
-  const [minMag, setMinMag] = useState(0)
+  const [minMag, setMinMag] = useState(() => {
+    const n = Number(boot.mag)
+    return Number.isFinite(n) && n >= 0 && n <= 8 ? n : 0
+  })
   const [timeMode, setTimeMode] = useState(false)
   const [windowMs, setWindowMs] = useState(WINDOW_OPTIONS[2].ms)
   const [playhead, setPlayhead] = useState(Date.now())
@@ -42,7 +62,7 @@ export default function App() {
   const [spin, setSpin] = useState(!reducedMotion)
 
   // --- capa de coropleta (densidad de poblacion) -----------------------
-  const [choropleth, setChoropleth] = useState(false)
+  const [choropleth, setChoropleth] = useState(() => boot.capas.includes('densidad'))
   const [countriesBase, setCountriesBase] = useState<CountryCollection | null>(null)
   const [density, setDensity] = useState<Map<string, DensityDatum> | null>(null)
   const [densityStatus, setDensityStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
@@ -51,7 +71,7 @@ export default function App() {
   const [countryQuery, setCountryQuery] = useState<string | null>(null)
 
   // --- capa de placas tectonicas ---------------------------------------
-  const [platesOn, setPlatesOn] = useState(false)
+  const [platesOn, setPlatesOn] = useState(() => boot.capas.includes('placas'))
   const [plates, setPlates] = useState<PlateCollection | null>(null)
 
   const [visibleIds, setVisibleIds] = useState<string[]>([])
@@ -139,6 +159,24 @@ export default function App() {
       }),
     }
   }, [countriesBase, density])
+
+  // --- escribir el estado compartible al hash ---------------------------
+  // replaceState (no pushState): compartible sin ensuciar el historial.
+  // Debounce corto: Safari limita la frecuencia de replaceState.
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const p = new URLSearchParams()
+      if (feedId !== FEEDS[0].id) p.set('feed', feedId)
+      if (basemapChoice && basemapChoice !== 'dark') p.set('view', basemapChoice)
+      if (minMag > 0) p.set('mag', String(minMag))
+      const capas = [platesOn && 'placas', choropleth && 'densidad'].filter(Boolean).join(',')
+      if (capas) p.set('capas', capas)
+      const hash = p.toString()
+      history.replaceState(null, '',
+        hash ? `#${hash}` : window.location.pathname + window.location.search)
+    }, 300)
+    return () => window.clearTimeout(t)
+  }, [feedId, basemapChoice, minMag, platesOn, choropleth])
 
   const range = useMemo(() => {
     const times = data.features.map((f) => f.properties.time)
@@ -275,7 +313,18 @@ export default function App() {
             onUserInteract={handleUserInteract}
           />
 
-          {status === 'loading' && <div className="overlay">Cargando sismos del USGS…</div>}
+          {status === 'ready' && (
+            <p className="map-count" aria-hidden="true">
+              {visibleQuakes.length} sismos en vista
+            </p>
+          )}
+
+          {status === 'loading' && (
+            <div className="overlay">
+              <span className="spinner" aria-hidden="true" />
+              <p>Cargando sismos del USGS…</p>
+            </div>
+          )}
           {status === 'error' && (
             <div className="overlay overlay-error" role="alert">
               <p><strong>No se pudo cargar el feed del USGS.</strong></p>
@@ -312,6 +361,18 @@ export default function App() {
       <section id="tabla" className="table-section" tabIndex={-1}>
         <QuakeTable quakes={visibleQuakes} selectedId={selectedId} onSelect={handleTableSelect} clustered={!!feed.cluster} />
       </section>
+
+      <footer className="footer">
+        <p>
+          Datos abiertos: USGS · Banco Mundial · Natural Earth · NASA GIBS · PB2002
+          &nbsp;·&nbsp; Basemap: OpenFreeMap
+        </p>
+        <p>
+          <a href="https://github.com/angiecortez/world-quake-globe" target="_blank" rel="noreferrer">
+            Codigo abierto en GitHub<span className="sr-only"> (se abre en una pestana nueva)</span>
+          </a>
+        </p>
+      </footer>
 
       {/* Region viva. El anuncio va con debounce a proposito: sin el, girar el
           globo o reproducir la linea de tiempo inundaria al lector de pantalla. */}

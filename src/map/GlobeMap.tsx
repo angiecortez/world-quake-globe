@@ -179,11 +179,43 @@ export function GlobeMap(props: GlobeMapProps) {
         cb.current.onCountrySelect(typeof iso3 === 'string' ? iso3 : null)
       }
     })
+    // Tooltip al pasar el puntero: azucar de exploracion, no la via formal
+    // al dato (esa sigue siendo la tabla y el detalle) — por eso aria-hidden.
+    const tooltip = document.createElement('div')
+    tooltip.className = 'map-tooltip'
+    tooltip.setAttribute('aria-hidden', 'true')
+    containerRef.current.appendChild(tooltip)
+
     map.on('mousemove', (e: MapMouseEvent) => {
-      const ids = [LAYER_MAIN, LAYER_CLUSTER].filter((id) => map.getLayer(id))
-      const hover = ids.length > 0 && map.queryRenderedFeatures(e.point, { layers: ids }).length > 0
-      map.getCanvas().style.cursor = hover ? 'pointer' : ''
+      const quake = map.getLayer(LAYER_MAIN)
+        ? map.queryRenderedFeatures(e.point, { layers: [LAYER_MAIN] })[0]
+        : undefined
+      const cluster = !quake && map.getLayer(LAYER_CLUSTER)
+        ? map.queryRenderedFeatures(e.point, { layers: [LAYER_CLUSTER] })[0]
+        : undefined
+      map.getCanvas().style.cursor = quake || cluster ? 'pointer' : ''
+
+      if (quake) {
+        const p = quake.properties as { mag: number; place: string }
+        tooltip.innerHTML = ''
+        const strong = document.createElement('strong')
+        strong.textContent = `M ${Number(p.mag).toFixed(1)}`
+        tooltip.append(strong, ` · ${p.place}`)
+      } else if (cluster) {
+        const n = (cluster.properties as { point_count: number }).point_count
+        tooltip.textContent = `${n} sismos — activar para acercar`
+      }
+      if (quake || cluster) {
+        const nearRight = e.point.x > map.getContainer().clientWidth * 0.62
+        tooltip.style.left = `${e.point.x}px`
+        tooltip.style.top = `${e.point.y}px`
+        tooltip.style.transform = nearRight ? 'translate(calc(-100% - 12px), -50%)' : 'translate(12px, -50%)'
+        tooltip.style.display = 'block'
+      } else {
+        tooltip.style.display = 'none'
+      }
     })
+    map.getCanvas().addEventListener('mouseleave', () => { tooltip.style.display = 'none' })
 
     const interact = () => cb.current.onUserInteract()
     map.on('dragstart', interact)
@@ -208,6 +240,7 @@ export function GlobeMap(props: GlobeMapProps) {
 
     return () => {
       window.clearTimeout(pending)
+      tooltip.remove()
       map.remove()
       mapRef.current = null
       readyRef.current = false

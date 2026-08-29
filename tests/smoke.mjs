@@ -162,6 +162,9 @@ try {
   check('la region viva anuncia el mismo conteo que la tabla',
     announced === rows, `anunciado=${announced} tabla=${rows}`)
 
+  const chipN = Number(((await page.locator('.map-count').innerText()).match(/\d+/) ?? [-1])[0])
+  check('el chip de conteo coincide con la tabla', chipN === rows, `chip=${chipN} tabla=${rows}`)
+
   // ---------------------------------------------- recorrido de teclado
   // El primer Tab de la pagina cae en el skip link, y activarlo lleva el
   // foco directo a la lista (WCAG 2.4.1): el mapa nunca es un peaje.
@@ -203,6 +206,18 @@ try {
   // abrio el detalle, no a <body> (WCAG 2.4.3).
   check('al cerrar, el foco vuelve a la fila que abrio el detalle',
     await page.evaluate(() => document.activeElement?.hasAttribute('data-quake-id') ?? false))
+
+  // El flyTo dejo el sismo seleccionado en el centro: pasar el puntero por
+  // ahi debe mostrar el tooltip informativo.
+  const canvasBox = await page.locator('.maplibregl-canvas').boundingBox()
+  await page.mouse.move(canvasBox.x + canvasBox.width / 2, canvasBox.y + canvasBox.height / 2)
+  await page.waitForTimeout(400)
+  check('el tooltip aparece al pasar el puntero por un sismo',
+    await page.evaluate(() => {
+      const t = document.querySelector('.map-tooltip')
+      return Boolean(t) && t.style.display === 'block' && /M \d/.test(t.textContent)
+    }))
+  await page.mouse.move(canvasBox.x + 4, canvasBox.y + 4)
 
   // --------------------- la tabla sigue viva despues de mover el mapa
   // Regresion del bug de debounce: con el globo rotando, 'moveend' se dispara
@@ -276,7 +291,10 @@ try {
 
   // ------------------------------------------------------ placas tectonicas
   await page.getByRole('checkbox', { name: /placas tectonicas/i }).check()
-  await page.waitForTimeout(1500)
+  // Encuadra la fosa Peru-Chile (borde Nazca/Sudamerica): la asercion no
+  // debe depender de donde dejaron el mapa las interacciones previas.
+  await page.evaluate(() => window.__wqgMap.jumpTo({ center: [-72, -20], zoom: 2.5 }))
+  await page.waitForTimeout(1800)
   check('la capa de placas renderiza bordes de verdad',
     await page.evaluate(() =>
       window.__wqgMap.queryRenderedFeatures({ layers: ['plates-line'] }).length > 0))
@@ -306,6 +324,27 @@ try {
     await page.evaluate(() =>
       window.__wqgMap.queryRenderedFeatures({ layers: ['quakes-cluster'] }).length === 0 &&
       window.__wqgMap.queryRenderedFeatures({ layers: ['quakes-main'] }).length === 0))
+
+  // ----------------------------------------------------- URL compartible
+  await page.waitForTimeout(600)  // el hash se escribe con debounce
+  check('el estado vive en el hash de la URL',
+    await page.evaluate(() =>
+      location.hash.includes('feed=all_month') &&
+      /capas=[^&]*placas/.test(location.hash) &&
+      location.hash.includes('mag=7')))
+  check('el footer enlaza al repositorio',
+    (await page.locator('.footer a[href*="github.com"]').count()) === 1)
+
+  // goto con solo el hash distinto seria navegacion de fragmento (sin
+  // recarga): pasar por about:blank fuerza un boot real desde el link.
+  await page.goto('about:blank')
+  await page.goto(`${BASE}#feed=all_week&view=contrast&mag=3.5`, { waitUntil: 'load' })
+  await page.waitForTimeout(4000)
+  check('abrir un link compartido restaura el estado',
+    await page.evaluate(() =>
+      document.querySelector('#feed').value === 'all_week' &&
+      document.querySelector('#basemap').value === 'contrast' &&
+      document.querySelector('#minmag').value === '3.5'))
 
   check('sin errores de consola tras todas las interacciones',
     consoleErrors.length === 0, consoleErrors[0])

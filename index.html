@@ -4,9 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>World Quake Globe — sismos globales en tiempo casi real</title>
-    <meta name="description" content="Visor GIS accesible de sismicidad global con datos abiertos del USGS." />
+    <meta name="description" content="Visor GIS accesible de sismicidad global: globo 3D con datos abiertos del USGS, coropleta del Banco Mundial y vista satelital de la NASA. WCAG 2.1 AA." />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <meta name="theme-color" content="#080b10" />
+
+    <!-- Open Graph: como se ve el link al compartirlo -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="World Quake Globe" />
+    <meta property="og:description" content="Sismicidad global sobre un globo 3D accesible: USGS en vivo, coropleta del Banco Mundial, vista satelital NASA y placas tectonicas. Sin API keys." />
+    <meta property="og:url" content="https://angiecortez.github.io/world-quake-globe/" />
+    <meta property="og:image" content="https://angiecortez.github.io/world-quake-globe/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+
     <link rel="preconnect" href="https://tiles.openfreemap.org" />
     <link rel="preconnect" href="https://earthquake.usgs.gov" />
+    <link rel="preload" href="./fonts/space-grotesk.woff2" as="font" type="font/woff2" crossorigin />
   </head>
   <body>
     <div id="root"></div>
